@@ -41,3 +41,19 @@ log_to_file: true
 # `curl http://localhost:{prom_port}/metrics`
 # Note `:PORT` format is needed if not specifiying a specific ip range
 prom_port: :2114
+# Pool Wallet Configuration
+
+## Configuration Fields
+
+- `pool_mining_wallet`: The wallet address where the mined funds will be sent.
+- `pool_fee_wallet`: The wallet address where the pool fees will be sent.
+- `pool_fee_percentage`: The percentage of mined funds to be taken as a fee by the pool.
+
+## Examples
+```yaml
+pool_mining_wallet: "YourMiningWalletAddress"
+pool_fee_wallet: "YourFeeWalletAddress"
+pool_fee_percentage: 1.5 # This means 1.5% of mined funds
+```
+
+# End of Configuration

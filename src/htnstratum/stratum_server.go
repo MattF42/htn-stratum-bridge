@@ -6,6 +6,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
@@ -18,22 +19,55 @@ const version = "v1.5.1"
 const minBlockWaitTime = 100 * time.Millisecond
 
 type BridgeConfig struct {
-	StratumPort       string        `yaml:"stratum_port"`
-	RPCServer         string        `yaml:"hoosat_address"`
-	PromPort          string        `yaml:"prom_port"`
-	PrintStats        bool          `yaml:"print_stats"`
-	UseLogFile        bool          `yaml:"log_to_file"`
-	HealthCheckPort   string        `yaml:"health_check_port"`
-	SoloMining        bool          `yaml:"solo_mining"`
-	BlockWaitTime     time.Duration `yaml:"block_wait_time"`
-	MinShareDiff      float64       `yaml:"min_share_diff"`
-	VarDiff           bool          `yaml:"var_diff"`
-	SharesPerMin      uint          `yaml:"shares_per_min"`
-	VarDiffStats      bool          `yaml:"var_diff_stats"`
-	ExtranonceSize    uint          `yaml:"extranonce_size"`
-	MineWhenNotSynced bool          `yaml:"mine_when_not_synced"`
-	Poll              int64         `yaml:"poll"`
-	Vote              int64         `yaml:"vote"`
+	StratumPort        string        `yaml:"stratum_port"`
+	RPCServer          string        `yaml:"hoosat_address"`
+	PromPort           string        `yaml:"prom_port"`
+	PrintStats         bool          `yaml:"print_stats"`
+	UseLogFile         bool          `yaml:"log_to_file"`
+	HealthCheckPort    string        `yaml:"health_check_port"`
+	SoloMining         bool          `yaml:"solo_mining"`
+	BlockWaitTime      time.Duration `yaml:"block_wait_time"`
+	MinShareDiff       float64       `yaml:"min_share_diff"`
+	VarDiff            bool          `yaml:"var_diff"`
+	SharesPerMin       uint          `yaml:"shares_per_min"`
+	VarDiffStats       bool          `yaml:"var_diff_stats"`
+	ExtranonceSize     uint          `yaml:"extranonce_size"`
+	MineWhenNotSynced  bool          `yaml:"mine_when_not_synced"`
+	Poll               int64         `yaml:"poll"`
+	Vote               int64         `yaml:"vote"`
+	PoolMiningWallet   string        `yaml:"pool_mining_wallet"`
+	PoolFeeWallet      string        `yaml:"pool_fee_wallet"`
+	PoolFeePercentage  float64       `yaml:"pool_fee_percentage"`
+}
+
+// ValidatePoolConfig validates the pool configuration
+func (cfg *BridgeConfig) ValidatePoolConfig() error {
+	// Check if pool mining wallet is valid
+	if cfg.PoolMiningWallet != "" {
+		if !strings.HasPrefix(cfg.PoolMiningWallet, "hoosat:") {
+			return fmt.Errorf("pool_mining_wallet must start with 'hoosat:', got: %s", cfg.PoolMiningWallet)
+		}
+		if len(cfg.PoolMiningWallet) < 10 {
+			return fmt.Errorf("pool_mining_wallet is too short: %s", cfg.PoolMiningWallet)
+		}
+	}
+
+	// Check if pool fee wallet is valid
+	if cfg.PoolFeeWallet != "" {
+		if !strings.HasPrefix(cfg.PoolFeeWallet, "hoosat:") {
+			return fmt.Errorf("pool_fee_wallet must start with 'hoosat:', got: %s", cfg.PoolFeeWallet)
+		}
+		if len(cfg.PoolFeeWallet) < 10 {
+			return fmt.Errorf("pool_fee_wallet is too short: %s", cfg.PoolFeeWallet)
+		}
+	}
+
+	// Validate pool fee percentage
+	if cfg.PoolFeePercentage < 0 || cfg.PoolFeePercentage > 100 {
+		return fmt.Errorf("pool_fee_percentage must be between 0 and 100, got: %f", cfg.PoolFeePercentage)
+	}
+
+	return nil
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -62,6 +96,11 @@ func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
 func ListenAndServe(cfg BridgeConfig) error {
 	logger, logCleanup := configureZap(cfg)
 	defer logCleanup()
+
+	// Validate pool configuration
+	if err := cfg.ValidatePoolConfig(); err != nil {
+		return fmt.Errorf("pool configuration validation failed: %w", err)
+	}
 
 	if cfg.PromPort != "" {
 		StartPromServer(logger, cfg.PromPort)

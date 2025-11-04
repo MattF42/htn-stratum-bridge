@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/MattF42/htn-stratum-bridge/src/gostratum"
 )
 
 const maxjobs = 32

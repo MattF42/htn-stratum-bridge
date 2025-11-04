@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/MattF42/htn-stratum-bridge/src/gostratum"
 	"github.com/mattn/go-colorable"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"database/sql"
+	"github.com/MattF42/htn-stratum-bridge/src/htnstratum/db"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const version = "v1.5.1"
@@ -38,6 +41,7 @@ type BridgeConfig struct {
 	PoolMiningWallet   string        `yaml:"pool_mining_wallet"`
 	PoolFeeWallet      string        `yaml:"pool_fee_wallet"`
 	PoolFeePercentage  float64       `yaml:"pool_fee_percentage"`
+	DatabasePath   string        `yaml:"database_path"`
 }
 
 // ValidatePoolConfig validates the pool configuration
@@ -101,6 +105,26 @@ func ListenAndServe(cfg BridgeConfig) error {
 	if err := cfg.ValidatePoolConfig(); err != nil {
 		return fmt.Errorf("pool configuration validation failed: %w", err)
 	}
+		// Initialize database
+	var primaryDB *sql.DB
+	var replicaDB *sql.DB
+	if cfg.DatabasePath != "" {
+		var err error
+		primaryDB, err = db.InitDatabase(cfg.DatabasePath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
+		logger.Info("primary database initialized", zap.String("path", cfg.DatabasePath))
+
+		replicaPath := cfg.DatabasePath + ".replica"
+		db.StartReplicaSync(cfg.DatabasePath, replicaPath, 5*time.Second)
+		logger.Info("replica sync started", zap.String("replica_path", replicaPath))
+
+		replicaDB, err = db.InitReplica(replicaPath)
+		if err != nil {
+			logger.Warn("failed to initialize replica database, continuing without it", zap.Error(err))
+		}
+	}
 
 	if cfg.PromPort != "" {
 		StartPromServer(logger, cfg.PromPort)
@@ -126,7 +150,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat)
+	shareHandler := newShareHandler(htnApi.hoosat, primaryDB)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4
@@ -135,7 +159,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 	if extranonceSize > 3 {
 		extranonceSize = 3
 	}
-	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize))
+	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize), primaryDB)
 	handlers := gostratum.DefaultHandlers()
 	// override the submit handler with an actual useful handler
 	handlers[string(gostratum.StratumMethodSubmit)] =

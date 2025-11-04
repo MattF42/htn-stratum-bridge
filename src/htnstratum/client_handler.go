@@ -8,8 +8,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"database/sql"
 
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/MattF42/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -30,9 +31,10 @@ type clientListener struct {
 	maxExtranonce    int32
 	nextExtranonce   int32
 	cfg              BridgeConfig
+	primaryDB        *sql.DB
 }
 
-func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, minShareDiff float64, extranonceSize int8) *clientListener {
+func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, minShareDiff float64, extranonceSize int8, primaryDB *sql.DB) *clientListener {
 	return &clientListener{
 		logger:         logger,
 		minShareDiff:   minShareDiff,
@@ -42,6 +44,7 @@ func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, mi
 		clientLock:     sync.RWMutex{},
 		shareHandler:   shareHandler,
 		clients:        make(map[int32]*gostratum.StratumContext),
+		primaryDB:      primaryDB,
 	}
 }
 

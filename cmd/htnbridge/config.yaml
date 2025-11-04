@@ -57,3 +57,5 @@ pool_fee_percentage: 1.5 # This means 1.5% of mined funds
 ```
 
 # End of Configuration
+# # Database configuration for pool stats and reward tracking
+database_path: "./pool_data.db"

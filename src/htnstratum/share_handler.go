@@ -17,8 +17,10 @@ import (
 	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/consensushashing"
 	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/pow"
 	"github.com/Hoosat-Oy/HTND/infrastructure/network/rpcclient"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/MattF42/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
+	"database/sql"
+	"github.com/MattF42/htn-stratum-bridge/src/htnstratum/db"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
@@ -48,6 +50,7 @@ type shareHandler struct {
 	statsLock    sync.Mutex
 	overall      WorkStats
 	tipBlueScore uint64
+	primaryDB    *sql.DB
 }
 
 type BanInfo struct {
@@ -82,11 +85,12 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, primaryDB *sql.DB) *shareHandler {
 	return &shareHandler{
 		hoosat:    hoosat,
 		stats:     map[string]*WorkStats{},
 		statsLock: sync.Mutex{},
+		primaryDB: primaryDB,
 	}
 }
 
@@ -337,9 +341,34 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	stats.LastShare = time.Now()
 	sh.overall.SharesFound.Add(1)
 	RecordShareFound(ctx, state.stratumDiff.hashValue)
+	// Record share to database
+	if sh.primaryDB != nil {
+		minerWallet := state.minerWallet
+		if minerWallet == "" {
+			minerWallet = ctx.WalletAddr
+		}
+		go func() {
+			if err := db.RecordShare(sh.primaryDB, minerWallet, ctx.WorkerName, state.stratumDiff.hashValue, submitInfo.block.Header.BlueScore, false); err != nil {
+				log.Printf("failed to record share: %v", err)
+			}
+		}()
+	}
 	stats.BlocksFound.Add(1)
 	sh.overall.BlocksFound.Add(1)
 	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), consensushashing.BlockHash(converted).String())
+	// Record block to database
+	if sh.primaryDB != nil {
+		minerWallet := state.minerWallet
+		if minerWallet == "" {
+			minerWallet = ctx.WalletAddr
+		}
+		blockHash := consensushashing.BlockHash(converted).String()
+		go func() {
+			if err := db.RecordBlock(sh.primaryDB, blockHash, minerWallet, 0, 0); err != nil {
+				log.Printf("failed to record block: %v", err)
+			}
+		}()
+	}
 	ctx.ReplySuccess(event.Id)
 	return nil
 }

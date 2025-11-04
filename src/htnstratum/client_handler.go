@@ -92,23 +92,23 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 			continue
 		}
 		go func(client *gostratum.StratumContext) {
-			state := GetMiningState(client)
-			if client.WalletAddr == "" {
-				if time.Since(state.connectTime) > time.Second*20 { // timeout passed
-					// this happens pretty frequently in gcp/aws land since script-kiddies scrape ports
-					client.Logger.Warn("client misconfigured, no miner address specified - disconnecting", zap.String("client", client.String()))
-					RecordWorkerError(client.WalletAddr, ErrNoMinerAddress)
-					client.Disconnect() // invalid configuration, boot the worker
-				}
-				return
-				// Store the miner's original wallet address for reward distribution tracking
-				if state.minerWallet == "" {
-					state.minerWallet = client.WalletAddr
-					client.Logger.Info("tracking miner wallet for reward distribution",
-						zap.String("miner_wallet", state.minerWallet))
-				}
-
-			}
+    		state := GetMiningState(client)
+    		if client.WalletAddr == "" {
+        		if time.Since(state.connectTime) > time.Second*20 { // timeout passed
+            		// this happens pretty frequently in gcp/aws land since script-kiddies scrape ports
+            		client.Logger.Warn("client misconfigured, no miner address specified - disconnecting", zap.String("client", client.String()))
+            		RecordWorkerError(client.WalletAddr, ErrNoMinerAddress)
+            		client.Disconnect() // invalid configuration, boot the worker
+        		}
+        		return
+    		}
+    		
+    		// Store the miner's original wallet address for reward distribution tracking
+    		if state.minerWallet == "" {
+        		state.minerWallet = client.WalletAddr
+        		client.Logger.Info("tracking miner wallet for reward distribution",
+            		zap.String("miner_wallet", state.minerWallet))
+    		}
 			template, err := htnApi.GetBlockTemplate(client, c.cfg, poll, vote)
 			if err != nil {
 				if strings.Contains(err.Error(), "Could not decode address") {

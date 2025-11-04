@@ -52,6 +52,9 @@ func main() {
 	flag.BoolVar(&cfg.MineWhenNotSynced, "minewhennotsynced", cfg.MineWhenNotSynced, "mine when not synced")
 	flag.Int64Var(&cfg.Poll, "poll", cfg.Poll, "Poll id for voting on blocks")
 	flag.Int64Var(&cfg.Vote, "vote", cfg.Vote, "Vote id of the poll for voting on blocks")
+        flag.StringVar(&cfg.PoolMiningWallet, "pool_mining_wallet", cfg.PoolMiningWallet, "pool wallet address for mining rewards")
+        flag.StringVar(&cfg.PoolFeeWallet, "pool_fee_wallet", cfg.PoolFeeWallet, "pool wallet address for pool fees")
+        flag.Float64Var(&cfg.PoolFeePercentage, "pool_fee_percentage", cfg.PoolFeePercentage, "percentage of rewards to take as pool fee (0-100)")
 	flag.Parse()
 
 	if cfg.MinShareDiff == 0 {
@@ -79,6 +82,9 @@ func main() {
 	log.Printf("Mine when not synced:\t%t", cfg.MineWhenNotSynced)
 	log.Printf("Poll id:\t\t\t%d", cfg.Poll)
 	log.Printf("Vote id:\t\t\t%d", cfg.Vote)
+        log.Printf("pool mining wallet:\t\t%s", cfg.PoolMiningWallet)
+        log.Printf("pool fee wallet:\t\t%s", cfg.PoolFeeWallet)
+        log.Printf("pool fee percentage:\t%.2f%%", cfg.PoolFeePercentage)
 	log.Println("----------------------------------")
 
 	if err := htnstratum.ListenAndServe(cfg); err != nil {

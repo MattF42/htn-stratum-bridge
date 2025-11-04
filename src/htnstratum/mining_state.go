@@ -20,6 +20,7 @@ type MiningState struct {
 	useBigJob   bool
 	connectTime time.Time
 	stratumDiff *hoosatDiff
+	minerWallet string
 }
 
 func MiningStateGenerator() any {

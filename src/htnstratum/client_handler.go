@@ -29,6 +29,7 @@ type clientListener struct {
 	extranonceSize   int8
 	maxExtranonce    int32
 	nextExtranonce   int32
+	cfg              BridgeConfig
 }
 
 func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, minShareDiff float64, extranonceSize int8) *clientListener {
@@ -100,8 +101,15 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 					client.Disconnect() // invalid configuration, boot the worker
 				}
 				return
+				// Store the miner's original wallet address for reward distribution tracking
+				if state.minerWallet == "" {
+					state.minerWallet = client.WalletAddr
+					client.Logger.Info("tracking miner wallet for reward distribution",
+						zap.String("miner_wallet", state.minerWallet))
+				}
+
 			}
-			template, err := htnApi.GetBlockTemplate(client, poll, vote)
+			template, err := htnApi.GetBlockTemplate(client, c.cfg, poll, vote)
 			if err != nil {
 				if strings.Contains(err.Error(), "Could not decode address") {
 					RecordWorkerError(client.WalletAddr, ErrInvalidAddressFmt)

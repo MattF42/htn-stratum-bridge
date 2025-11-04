@@ -146,22 +146,33 @@ func sanitizeWorkerID(s string) string {
 	}
 	return s
 }
+func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, cfg BridgeConfig, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
+	// Use pool mining wallet if configured, otherwise use client's wallet
+	walletAddr := client.WalletAddr
+	if cfg.PoolMiningWallet != "" {
+		if client.WalletAddr != cfg.PoolMiningWallet {
+			htnApi.logger.Warn("enforcing pool mining wallet",
+				zap.String("pool_wallet", cfg.PoolMiningWallet),
+				zap.String("client_wallet", client.WalletAddr),
+				zap.String("worker", client.WorkerName),
+				zap.String("client_id", client.String()))
+		}
+		walletAddr = cfg.PoolMiningWallet
+	}
 
-func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
 	if poll != 0 && vote != 0 {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
+		template, err := htnApi.hoosat.GetBlockTemplate(walletAddr,
 			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d `, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
 		return template, nil
 	} else {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
+		template, err := htnApi.hoosat.GetBlockTemplate(walletAddr,
 			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName)))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
 		return template, nil
 	}
-
 }

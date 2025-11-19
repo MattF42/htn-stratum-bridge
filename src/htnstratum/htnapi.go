@@ -2,8 +2,6 @@ package htnstratum
 
 import (
 	"context"
-	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/HTND/infrastructure/network/rpcclient"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/bridgefee"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -157,9 +154,40 @@ func sanitizeWorkerID(s string) string {
 
 func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
 	// Determine the target payout address (miner or bridge)
+	IncTotalGBT()
 	payoutAddress := client.WalletAddr
 
+        if htnApi.bridgeFee.Enabled && htnApi.bridgeFee.RatePpm > 0 {
+            // Read counters
+            // total is the current total GBTs (already incremented)
+            _, total, _ := GetDivertStats()
+        
+            // compute allowed diversions for this total: floor(total * rate / 10000)
+            allowed := (total * uint64(htnApi.bridgeFee.RatePpm)) / 10000
+        
+            // attempt to atomically increment diverted if we are still below allowed
+            for {
+                // load current diverted
+                diverted := atomic.LoadUint64(&divertedGBTs) // or use your wrapper's storage
+                if diverted >= allowed {
+                    // already at/above allowed share, skip diversion
+                    break
+                }
+                // try to claim one diversion slot
+                if atomic.CompareAndSwapUint64(&divertedGBTs, diverted, diverted+1) {
+                    // successfully took a slot -> divert this GBT
+                    payoutAddress = htnApi.bridgeFee.Address
+                    // log concise rolling stats
+                    d, t, p := GetDivertStats()
+                    htnApi.logger.Infof("diverted GBTs %.3f%% (%d/%d)", p, d, t)
+                    break
+                }
+                // CAS failed due to race; loop and re-evaluate
+            }
+        }
+
 	// Check if bridge fee is enabled and should replace this GBT
+	/*
 	if htnApi.bridgeFee.Enabled && htnApi.bridgeFee.ServerSalt != "" {
 		// Get the latest block DAG info to retrieve prevBlockHash
 		dagInfo, err := htnApi.hoosat.GetBlockDAGInfo()
@@ -201,15 +229,22 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 				// Check if this GBT should be diverted to bridge address
 				if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
 					payoutAddress = htnApi.bridgeFee.Address
-					htnApi.logger.Info("diverting GBT to bridge address",
-						zap.Uint64("job_counter", jobCounterValue),
-						zap.String("prev_block_hash", dagInfo.TipHashes[0]),
-						zap.String("worker", sanitizeWorkerID(client.WorkerName)))
-					RecordDivertedGBT()
+					// htnApi.logger.Info("diverting GBT to bridge address",
+						// zap.Uint64("job_counter", jobCounterValue),
+						// zap.String("prev_block_hash", dagInfo.TipHashes[0]),
+						// zap.String("worker", sanitizeWorkerID(client.WorkerName)))
+					// RecordDivertedGBT()
+					IncDivertedGBT()
+					d, t, p := GetDivertStats()
+					htnApi.logger.Infof("diverted GBTs %.3f%% (%d/%d)",
+						p, d, t)
 				}
 			}
 		}
 	}
+	*/
+
+
 
 	// Build extraData string
 	var extraData string

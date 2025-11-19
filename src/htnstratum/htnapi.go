@@ -2,13 +2,17 @@ package htnstratum
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/HTND/infrastructure/network/rpcclient"
+	"github.com/Hoosat-Oy/htn-stratum-bridge/src/bridgefee"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -20,9 +24,11 @@ type HtnApi struct {
 	logger        *zap.SugaredLogger
 	hoosat        *rpcclient.RPCClient
 	connected     bool
+	bridgeFee     BridgeFeeConfig
+	jobCounter    uint64 // Atomic counter for unique job identifiers
 }
 
-func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger) (*HtnApi, error) {
+func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, bridgeFee BridgeFeeConfig) (*HtnApi, error) {
 	client, err := rpcclient.NewRPCClient(address)
 	if err != nil {
 		return nil, err
@@ -34,6 +40,8 @@ func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.Sugar
 		logger:        logger.With(zap.String("component", "hoosatapi:"+address)),
 		hoosat:        client,
 		connected:     true,
+		bridgeFee:     bridgeFee,
+		jobCounter:    0,
 	}, nil
 }
 
@@ -148,20 +156,76 @@ func sanitizeWorkerID(s string) string {
 }
 
 func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
-	if poll != 0 && vote != 0 {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d `, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote))
+	// Determine the target payout address (miner or bridge)
+	payoutAddress := client.WalletAddr
+
+	// Check if bridge fee is enabled and should replace this GBT
+	if htnApi.bridgeFee.Enabled && htnApi.bridgeFee.ServerSalt != "" {
+		// Get the latest block DAG info to retrieve prevBlockHash
+		dagInfo, err := htnApi.hoosat.GetBlockDAGInfo()
 		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+			htnApi.logger.Warn("failed to get DAG info for bridge fee calculation", zap.Error(err))
+		} else if len(dagInfo.TipHashes) > 0 {
+			// Increment global job counter atomically
+			jobCounterValue := atomic.AddUint64(&htnApi.jobCounter, 1)
+
+			// Decode prevBlockHash from hex
+			prevBlockHashBytes, err := hex.DecodeString(dagInfo.TipHashes[0])
+			if err != nil {
+				// If decode fails, log and skip bridge fee selection for this GBT
+				htnApi.logger.Warn("failed to decode prevBlockHash for bridge fee calculation, skipping selection",
+					zap.Error(err),
+					zap.String("prev_block_hash_hex", dagInfo.TipHashes[0]))
+			} else {
+				// Build jobKey: jobCounter || prevBlockHash || timestamp || workerID
+				workerID := []byte(sanitizeWorkerID(client.WorkerName))
+				jobKeyLen := 8 + len(prevBlockHashBytes) + 8 + len(workerID)
+				jobKey := make([]byte, jobKeyLen)
+				
+				// Add job counter (8 bytes, big-endian)
+				offset := 0
+				binary.BigEndian.PutUint64(jobKey[offset:], jobCounterValue)
+				offset += 8
+				
+				// Add prevBlockHash bytes
+				copy(jobKey[offset:], prevBlockHashBytes)
+				offset += len(prevBlockHashBytes)
+				
+				// Add timestamp (8 bytes, big-endian)
+				binary.BigEndian.PutUint64(jobKey[offset:], uint64(time.Now().Unix()))
+				offset += 8
+				
+				// Add workerID (UTF-8 bytes)
+				copy(jobKey[offset:], workerID)
+
+				// Check if this GBT should be diverted to bridge address
+				if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
+					payoutAddress = htnApi.bridgeFee.Address
+					htnApi.logger.Info("diverting GBT to bridge address",
+						zap.Uint64("job_counter", jobCounterValue),
+						zap.String("prev_block_hash", dagInfo.TipHashes[0]),
+						zap.String("worker", sanitizeWorkerID(client.WorkerName)))
+					RecordDivertedGBT()
+				}
+			}
 		}
-		return template, nil
-	} else {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName)))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
-		}
-		return template, nil
 	}
 
+	// Build extraData string
+	var extraData string
+	if poll != 0 && vote != 0 {
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`, 
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+	} else {
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, 
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
+	}
+
+	// Request block template with selected payout address
+	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+	}
+
+	return template, nil
 }

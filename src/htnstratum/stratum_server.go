@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v1.6.0"
+const version = "v1.6.8"
 const minBlockWaitTime = 100 * time.Millisecond
 
 // Default bridge fee configuration
@@ -31,23 +31,29 @@ type BridgeFeeConfig struct {
 }
 
 type BridgeConfig struct {
-	StratumPort       string           `yaml:"stratum_port"`
-	RPCServer         string           `yaml:"hoosat_address"`
-	PromPort          string           `yaml:"prom_port"`
-	PrintStats        bool             `yaml:"print_stats"`
-	UseLogFile        bool             `yaml:"log_to_file"`
-	HealthCheckPort   string           `yaml:"health_check_port"`
-	SoloMining        bool             `yaml:"solo_mining"`
-	BlockWaitTime     time.Duration    `yaml:"block_wait_time"`
-	MinShareDiff      float64          `yaml:"min_share_diff"`
-	VarDiff           bool             `yaml:"var_diff"`
-	SharesPerMin      uint             `yaml:"shares_per_min"`
-	VarDiffStats      bool             `yaml:"var_diff_stats"`
-	ExtranonceSize    uint             `yaml:"extranonce_size"`
-	MineWhenNotSynced bool             `yaml:"mine_when_not_synced"`
-	Poll              int64            `yaml:"poll"`
-	Vote              int64            `yaml:"vote"`
-	BridgeFee         BridgeFeeConfig  `yaml:"bridge_fee"`
+	StratumPort       string        `yaml:"stratum_port"`
+	RPCServer         string        `yaml:"hoosat_address"`
+	PromPort          string        `yaml:"prom_port"`
+	PrintStats        bool          `yaml:"print_stats"`
+
+	// upstream addition
+	RollingStats      bool          `yaml:"rolling_stats"`
+
+	UseLogFile        bool          `yaml:"log_to_file"`
+	HealthCheckPort   string        `yaml:"health_check_port"`
+	SoloMining        bool          `yaml:"solo_mining"`
+	BlockWaitTime     time.Duration `yaml:"block_wait_time"`
+	MinShareDiff      float64       `yaml:"min_share_diff"`
+	VarDiff           bool          `yaml:"var_diff"`
+	SharesPerMin      uint          `yaml:"shares_per_min"`
+	VarDiffStats      bool          `yaml:"var_diff_stats"`
+	ExtranonceSize    uint          `yaml:"extranonce_size"`
+	MineWhenNotSynced bool          `yaml:"mine_when_not_synced"`
+	Poll              int64         `yaml:"poll"`
+	Vote              int64         `yaml:"vote"`
+
+	// your feature
+	BridgeFee         BridgeFeeConfig `yaml:"bridge_fee"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -81,11 +87,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		StartPromServer(logger, cfg.PromPort)
 	}
 
-	blockWaitTime := cfg.BlockWaitTime
-	if blockWaitTime < minBlockWaitTime {
-		blockWaitTime = minBlockWaitTime
-	}
-
+	blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
 	// Set default bridge fee config if not provided
 	if cfg.BridgeFee.Address == "" {
 		cfg.BridgeFee.Address = defaultBridgeFeeAddress
@@ -110,15 +112,12 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat)
+	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4
 	}
-	extranonceSize := cfg.ExtranonceSize
-	if extranonceSize > 3 {
-		extranonceSize = 3
-	}
+	extranonceSize := min(cfg.ExtranonceSize, 3)
 	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize))
 	handlers := gostratum.DefaultHandlers()
 	// override the submit handler with an actual useful handler

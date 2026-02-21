@@ -40,6 +40,8 @@ type HtnApi struct {
 	gbtCache    map[string]*gbtCacheEntry
 	gbtCacheTTL time.Duration
 	gbtCacheMu  sync.Mutex
+        gbtCacheHits   uint64
+        gbtCacheMisses uint64
 }
 
 func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, bridgeFee BridgeFeeConfig, gbtCacheTTL time.Duration) (*HtnApi, error) {
@@ -168,7 +170,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
 	blockReadyChan := make(chan bool)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
-		htnApi.invalidateGBTCache()
+		// htnApi.invalidateGBTCache() // Happens far too often, and not just for new Tips.  Instead rely on 100ms TTL
 		blockReadyChan <- true
 	})
 	if err != nil {
@@ -277,28 +279,47 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 
 	// Build extraData string
 	var extraData string
-	if poll != 0 && vote != 0 {
+	if htnApi.gbtCacheTTL > 0 {
+	   if poll != 0 && vote != 0 {
 		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`, 
 			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
-	} else {
-		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, 
-			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
-	}
+	   } else {
+		        // We must keep extraData the same to have effective caching
+			extraData = fmt.Sprintf(`Mined via htn-stratum-bridge version %s`, version)
+	  }
+	} else { // Pre GBT cache behaviour
+	   if poll != 0 && vote != 0 {
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`, 
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+	   } else {
+		 extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, 
+			 client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
+	  }
+        }
+
 
 	// Request block template with selected payout address, using per-address
 	// cache when gbtCacheTTL > 0 to reduce RPC load on the node.
 	// On a cache miss the lock is released before the RPC call so concurrent
 	// requests for different payout addresses proceed in parallel; only map
 	// reads/writes are protected by the mutex.
-	if htnApi.gbtCacheTTL > 0 {
+	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
 		htnApi.gbtCacheMu.Lock()
 		entry, ok := htnApi.gbtCache[payoutAddress]
 		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
 			cached := entry.template
 			htnApi.gbtCacheMu.Unlock()
+                       	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
+		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
+		        total := hits + misses
+		        if total%10 == 0 {
+			        rate := (float64(hits) / float64(total)) * 100.0
+			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
+		        }
 			return cached, nil
 		}
 		htnApi.gbtCacheMu.Unlock()
+                atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
 
 		// Cache miss or expired – fetch outside the lock.
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)

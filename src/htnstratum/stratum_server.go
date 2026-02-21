@@ -48,6 +48,10 @@ type BridgeConfig struct {
 	Poll              int64            `yaml:"poll"`
 	Vote              int64            `yaml:"vote"`
 	BridgeFee         BridgeFeeConfig  `yaml:"bridge_fee"`
+	// GbtCacheTTL is how long to cache GetBlockTemplate responses per payout
+	// address.  A value of 0 (the default) disables caching.  For a 5 BPS
+	// network ~150ms is a good starting point.
+	GbtCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -94,7 +98,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		cfg.BridgeFee.RatePpm = defaultBridgeFeeRatePpm
 	}
 
-	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee)
+	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee, cfg.GbtCacheTTL)
 	if err != nil {
 		return err
 	}

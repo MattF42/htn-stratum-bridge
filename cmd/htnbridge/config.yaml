@@ -60,3 +60,10 @@ bridge_fee:
   # MUST be configured for production use to enable the feature
   # Generate a random string: e.g., `openssl rand -hex 32`
   server_salt: ""
+
+# gbt_cache_ttl: how long to cache GetBlockTemplate responses per payout address.
+# Caching reduces RPC load on the node when many workers request templates
+# simultaneously after a new block notification.
+# Set to 0 (or omit) to disable caching.
+# Recommended: ~150ms for a 5 BPS network.
+# gbt_cache_ttl: 150ms

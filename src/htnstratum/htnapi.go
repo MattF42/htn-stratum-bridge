@@ -312,7 +312,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
                        	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
 		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
 		        total := hits + misses
-		        if total%10 == 0 {
+		        if total%1000 == 0 {
 			        rate := (float64(hits) / float64(total)) * 100.0
 			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
 		        }

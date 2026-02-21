@@ -31,13 +31,11 @@ type BridgeFeeConfig struct {
 }
 
 type BridgeConfig struct {
-	StratumPort       string        `yaml:"stratum_port"`
-	RPCServer         string        `yaml:"hoosat_address"`
-	PromPort          string        `yaml:"prom_port"`
-	PrintStats        bool          `yaml:"print_stats"`
-
-	// upstream addition
-	RollingStats      bool          `yaml:"rolling_stats"`
+	StratumPort  string `yaml:"stratum_port"`
+	RPCServer    string `yaml:"hoosat_address"`
+	PromPort     string `yaml:"prom_port"`
+	PrintStats   bool   `yaml:"print_stats"`
+	RollingStats bool   `yaml:"rolling_stats"`
 
 	UseLogFile        bool          `yaml:"log_to_file"`
 	HealthCheckPort   string        `yaml:"health_check_port"`
@@ -52,8 +50,11 @@ type BridgeConfig struct {
 	Poll              int64         `yaml:"poll"`
 	Vote              int64         `yaml:"vote"`
 
-	// your feature
-	BridgeFee         BridgeFeeConfig `yaml:"bridge_fee"`
+	BridgeFee BridgeFeeConfig `yaml:"bridge_fee"`
+
+	// GBTCacheTTL is how long to cache GetBlockTemplate responses per payout address.
+	// 0 disables caching. For a 5 BPS network, ~150ms is a good starting point.
+	GBTCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -96,7 +97,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		cfg.BridgeFee.RatePpm = defaultBridgeFeeRatePpm
 	}
 
-	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee)
+	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee, cfg.GBTCacheTTL)
 	if err != nil {
 		return err
 	}

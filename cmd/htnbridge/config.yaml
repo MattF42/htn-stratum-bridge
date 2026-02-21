@@ -58,7 +58,15 @@ bridge_fee:
 
 # address: Bridge payout address
   address: "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+  
+  # server_salt: REQUIRED secret salt for deterministic selection
+  # MUST be configured for production use to enable the feature
+  # Generate a random string: e.g., `openssl rand -hex 32`
+  server_salt: ""
 
-# server_salt: REQUIRED secret salt for deterministic selection
-# Generate with: openssl rand -hex 32
-  server_salt: "3b05e1362f98db8c300910ed7b6ac3e2e1b1c27c6011a98fcce366918c3c830c"
+# gbt_cache_ttl: how long to cache GetBlockTemplate responses per payout address.
+# Caching reduces RPC load on the node when many workers request templates
+# simultaneously after a new block notification.
+# Set to 0 (or omit) to disable caching.
+# Recommended: ~150ms for a 5 BPS network.
+gbt_cache_ttl: 150ms

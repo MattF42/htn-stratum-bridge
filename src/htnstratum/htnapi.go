@@ -153,7 +153,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 	for {
 		clientInfo, err := htnApi.hoosat.GetInfo()
 		if err != nil {
-			return errors.Wrapf(err, "error fetching server info from hoosat @ %s", htnApi.address)
+			clientInfo.IsSynced = false
 		}
 		if clientInfo.IsSynced {
 			break

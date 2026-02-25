@@ -424,7 +424,7 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
         // Refuse to submit blocks when the node is not synced.
 	info, err := sh.hoosat.GetInfo()
 	if err != nil {
-		return errors.Wrap(err, "failed to query node sync state before block submit")
+		info.IsSynced = false
 	}
 	if !info.IsSynced {
 		return errors.New("node is not synced; refusing to submit block")

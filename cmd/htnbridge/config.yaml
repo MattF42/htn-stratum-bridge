@@ -68,5 +68,4 @@ bridge_fee:
 # Caching reduces RPC load on the node when many workers request templates
 # simultaneously after a new block notification.
 # Set to 0 (or omit) to disable caching.
-# Recommended: ~150ms for a 5 BPS network.
-gbt_cache_ttl: 200ms
+gbt_cache_ttl: 190ms

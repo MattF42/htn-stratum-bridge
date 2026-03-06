@@ -66,11 +66,12 @@ func (c *clientListener) OnConnect(ctx *gostratum.StratumContext) {
 	if c.extranonceSize > 0 {
 		ctx.Extranonce = fmt.Sprintf("%0*x", c.extranonceSize*2, extranonce)
 	}
-	go func() {
-		// hacky, but give time for the authorize to go through so we can use the worker name
-		time.Sleep(5 * time.Second)
-		c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
-	}()
+	// Foztor - do not do here, we end up with port scanners being tracked.
+	// go func() {
+		// // hacky, but give time for the authorize to go through so we can use the worker name
+		// time.Sleep(5 * time.Second)
+		// c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
+	// }()
 }
 
 func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {

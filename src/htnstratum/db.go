@@ -140,7 +140,7 @@ func (d *MiningDB) GetBlocksByWalletPaged(walletAddr string, limit, offset int) 
 		offset = 0
 	}
 	rows, err := d.db.Query(
-		`SELECT id, timestamp, block_hash, wallet_address, worker_name, reward_atoms
+		`SELECT id, timestamp, block_hash, wallet_address, worker_name, reward_atoms, status
 		 FROM block_rewards
 		 WHERE wallet_address = ?
 		 ORDER BY timestamp DESC
@@ -155,7 +155,7 @@ func (d *MiningDB) GetBlocksByWalletPaged(walletAddr string, limit, offset int) 
 	var out []BlockRecord
 	for rows.Next() {
 		var r BlockRecord
-		if err := rows.Scan(&r.ID, &r.Timestamp, &r.BlockHash, &r.WalletAddress, &r.WorkerName, &r.RewardAtoms); err != nil {
+		if err := rows.Scan(&r.ID, &r.Timestamp, &r.BlockHash, &r.WalletAddress, &r.WorkerName, &r.RewardAtoms, &r.Status); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -178,6 +178,13 @@ func (db *MiningDB) GetBlockCountsByWallet(wallet string) (blue, red, pending in
     }
     return
 }
+
+func (db *MiningDB) GetTotalAtomsByWallet(wallet string) (uint64, error) {
+    var total uint64
+    err := db.db.QueryRow(`SELECT COALESCE(SUM(reward_atoms), 0) FROM block_rewards WHERE wallet_address = ?`, wallet).Scan(&total)
+    return total, err
+}
+
 
 // Close closes the underlying database connection.
 func (d *MiningDB) Close() error {

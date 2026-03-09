@@ -62,15 +62,17 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   button:hover{background:#00d4ff;color:#1a1a2e}
   .error{color:#ff6b6b;margin-top:8px}
 </style>
-<meta http-equiv="refresh" content="30">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor 0.5% Pool Fee</h5>
+<h5>By Foztor 0.5% Pool Fee<BR>
+Pool fee is collected by randomly selecting jobs to mine to the pool wallet address<BR>
+All blocks that turn blue are instantly available in your wallet<BR>
+They are directly mined by you</h5>
 <h2>Miner Earnings &amp; Stats</h2>
 <p>Connect your miner to <code>{{.StratumAddr}}</code></p>
-<p>Enter your wallet address to view historical block rewards.</p>
+<p>Enter your wallet address to see your stats.</p>
 <form action="/stats" method="GET">
   <input type="text" name="address" placeholder="hoosat:qr…" required>
   <br>
@@ -139,21 +141,22 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .pagination .page-info{font-size:13px;color:#aaa}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
+<meta http-equiv="refresh" content="60">
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor - 0.5% Pool Fee</h5>
-<div class="back"><a href="/">← Search another address</a></div>
+<h5>By Foztor - 0.5% Pool Fee<BR>Page automatically reloads every 30 seconds</h5>
+<div class="back"><a href="/">← Change Wallet</a></div>
 <h2>Stats for</h2>
 <div class="addr">{{.Address}}</div>
 
 <div class="summary">
 <div class="card">
-  <div class="label">Blocks Found</div>
+  <div class="label">Lifetime Blocks</div>
   <div class="value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: red;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
 </div>
   <div class="card">
-    <div class="label">Total Earned</div>
+    <div class="label">Lifetime Mined</div>
     <div class="value">{{fmtAtoms .TotalAtoms}}</div>
   </div>
   <div class="card">
@@ -215,7 +218,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span class="badge-orphaned">RED BLOCK :(</span>{{else}}<span class="badge-pending">Pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
+  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span style="color:red;">RED BLOCK</span>{{else}}<span class="badge-pending">Pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
@@ -262,19 +265,25 @@ function renderTable(blocks) {
   var html = '';
   for (var i = 0; i < blocks.length; i++) {
     var b = blocks[i];
+    // console.log("status is " + b.status + " or " + b.Status);
     var rewardCell;
     var nowMs = Date.now();
     // Timestamp is Unix milliseconds; blocks older than 10 min with no reward are orphaned
     var ageMin = (nowMs - b.Timestamp) / 60000;
-    if (b.RewardAtoms === 0) {
-      if (ageMin > 10) {
-        rewardCell = '<span class="badge-orphaned">RED BLOCK</span>';
-      } else {
-        rewardCell = '<span class="badge-pending">pending</span>';
-      }
+    if (b.Status === 'blue') {
+    rewardCell = '<span style="color: green;">' + fmtAtoms(b.RewardAtoms) + '</span>';
+  } else if (b.Status === 'red') {
+    rewardCell = '<span style="color: red;">RED BLOCK</span>';
+  } else {
+    // For pending, check if stale (older than 10 min)
+    var nowMs = Date.now();
+    var ageMin = (nowMs - b.Timestamp) / 60000;
+    if (ageMin > 10) {
+	    rewardCell = '<span style="color: red;">RED BLOCK</span>';
     } else {
-      rewardCell = fmtAtoms(b.RewardAtoms);
+      rewardCell = '<span class="badge-pending">Pending</span>';
     }
+  }
     // Show first 8 and last 8 chars for hashes longer than 16 chars (matches server-side shortHash)
     var shortH = b.BlockHash.length > 16 ? b.BlockHash.slice(0,8) + '\u2026' + b.BlockHash.slice(-8) : b.BlockHash;
     var tStr = b.Timestamp ? new Date(b.Timestamp).toISOString().replace('T',' ').replace(/\..+/,' UTC') : '\u2013';
@@ -398,12 +407,10 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 
 		var totalAtoms uint64
-		workers := map[string]struct{}{}
-		for _, b := range blocks {
-			totalAtoms += b.RewardAtoms
-			if b.WorkerName != "" {
-				workers[b.WorkerName] = struct{}{}
-			}
+		totalAtoms, err = db.GetTotalAtomsByWallet(addr)
+		if err != nil {
+    		logger.Warn("webui: db total atoms error", zap.Error(err))
+    		totalAtoms = 0  // Or handle error
 		}
 
 		filteredWorkers := getLiveWorkerStats(sh, addr)

@@ -485,16 +485,21 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	return err
 }
 
-// fetchAndUpdateReward queries the Hoosat node API after a short delay to
-// retrieve the coinbase reward for the given block hash, then updates the DB.
-// It retries a few times to handle propagation latency.
+// fetchAndUpdateReward queries the Hoosat node API to retrieve the coinbase
+// reward for the given block hash, then updates the DB record.  It is
+// intended to run in a background goroutine and retries a few times to
+// handle propagation latency.  The goroutine is fire-and-forget and will
+// exit once the reward is found or all retries are exhausted.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
 		maxAttempts = 5
 		retryDelay  = 3 * time.Second
 	)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		time.Sleep(retryDelay)
+		// Sleep before retrying (not before the first attempt).
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
 		br, err := sh.hoosat.GetBlock(blockHash, true)
 		if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
 			continue

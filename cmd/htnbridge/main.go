@@ -52,6 +52,7 @@ func main() {
 	flag.BoolVar(&cfg.MineWhenNotSynced, "minewhennotsynced", cfg.MineWhenNotSynced, "mine when not synced")
 	flag.Int64Var(&cfg.Poll, "poll", cfg.Poll, "Poll id for voting on blocks")
 	flag.Int64Var(&cfg.Vote, "vote", cfg.Vote, "Vote id of the poll for voting on blocks")
+	flag.StringVar(&cfg.WebPort, "webport", cfg.WebPort, "address:port for the miner stats web UI (e.g. :8080)")
 	flag.Parse()
 
 	if cfg.MinShareDiff == 0 {
@@ -79,6 +80,7 @@ func main() {
 	log.Printf("Mine when not synced:\t%t", cfg.MineWhenNotSynced)
 	log.Printf("Poll id:\t\t\t%d", cfg.Poll)
 	log.Printf("Vote id:\t\t\t%d", cfg.Vote)
+	log.Printf("Web UI port:\t\t\t%s", cfg.WebPort)
 	log.Printf("Bridge fee enabled:\t\t%t", cfg.BridgeFee.Enabled)
 	if cfg.BridgeFee.Enabled {
 		log.Printf("Bridge fee rate:\t\t%d ppm (%.4f%%)", cfg.BridgeFee.RatePpm, float64(cfg.BridgeFee.RatePpm)/100.0)

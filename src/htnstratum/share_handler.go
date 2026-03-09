@@ -57,6 +57,7 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
+	miningDB           *MiningDB // may be nil if DB is not configured
 }
 
 type BanInfo struct {
@@ -91,7 +92,7 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func()) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func(), miningDB *MiningDB) *shareHandler {
 	return &shareHandler{
 		hoosat: hoosat,
 		stats:  map[string]*WorkStats{},
@@ -101,9 +102,10 @@ func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateG
 			RollingStaleShares:   make(map[int64]int64),
 			RollingInvalidShares: make(map[int64]int64),
 		},
-		rollingStats: rollingStats,
-		statsLock:    sync.Mutex{},
+		rollingStats:       rollingStats,
+		statsLock:          sync.Mutex{},
 		invalidateGBTCache: invalidateGBTCache,
+		miningDB:           miningDB,
 	}
 }
 
@@ -431,7 +433,27 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	RecordShareFound(ctx, state.stratumDiff.hashValue)
 	stats.BlocksFound.Add(1)
 	sh.overall.BlocksFound.Add(1)
-	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), consensushashing.BlockHash(converted).String())
+	blockHash := consensushashing.BlockHash(converted).String()
+	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), blockHash)
+
+	// Persist the found block to the mining database.
+	if sh.miningDB != nil {
+		record := BlockRecord{
+			Timestamp:     time.Now().UnixMilli(),
+			BlockHash:     blockHash,
+			WalletAddress: ctx.WalletAddr,
+			WorkerName:    ctx.WorkerName,
+			RewardAtoms:   0, // updated asynchronously once the node confirms the block
+		}
+		if err := sh.miningDB.RecordBlock(record); err != nil {
+			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
+		} else {
+			// Query the Hoosat node API asynchronously to fetch the actual block
+			// reward once the block has been processed and update the DB record.
+			go sh.fetchAndUpdateReward(blockHash)
+		}
+	}
+
 	ctx.ReplySuccess(event.Id)
 	return nil
 }
@@ -461,6 +483,38 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	}
 	state.RemoveJob(int(submitInfo.jobId))
 	return err
+}
+
+// fetchAndUpdateReward queries the Hoosat node API after a short delay to
+// retrieve the coinbase reward for the given block hash, then updates the DB.
+// It retries a few times to handle propagation latency.
+func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
+	const (
+		maxAttempts = 5
+		retryDelay  = 3 * time.Second
+	)
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		time.Sleep(retryDelay)
+		br, err := sh.hoosat.GetBlock(blockHash, true)
+		if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
+			continue
+		}
+		// Sum all coinbase outputs as the total block reward.
+		var reward uint64
+		cb := br.Block.Transactions[0]
+		for _, o := range cb.Outputs {
+			if o != nil {
+				reward += o.Amount
+			}
+		}
+		if reward == 0 {
+			continue
+		}
+		if err := sh.miningDB.UpdateReward(blockHash, reward); err != nil {
+			log.Printf("failed to update reward for block %s: %v", blockHash, err)
+		}
+		return
+	}
 }
 
 func (sh *shareHandler) startStatsThread() error {

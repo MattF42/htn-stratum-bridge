@@ -69,3 +69,8 @@ bridge_fee:
 # simultaneously after a new block notification.
 # Set to 0 (or omit) to disable caching.
 gbt_cache_ttl: 190ms
+
+# web_port: if set, the miner stats web UI will be served on this port.
+# Miners can visit http://<bridge-host>:<port>/ to view their earnings filtered
+# by wallet address.  Historical block rewards are stored in mining.db (SQLite3).
+web_port: :8080

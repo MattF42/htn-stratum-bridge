@@ -505,7 +505,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
     time.Sleep(30 * time.Second)  // Keep delay
     const (
         maxAttempts = 5
-        retryDelay  = 10 * time.Second
+        retryDelay  = 120 * time.Second
     )
     for attempt := 0; attempt < maxAttempts; attempt++ {
         // log.Printf("Checking Block %s", blockHash)

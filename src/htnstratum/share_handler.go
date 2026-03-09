@@ -447,6 +447,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			WorkerName:    ctx.WorkerName,
 			RewardAtoms:   0, // updated asynchronously once the node confirms the block
 		}
+		log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
 		if err := sh.miningDB.RecordBlock(record); err != nil {
 			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
 		} else {

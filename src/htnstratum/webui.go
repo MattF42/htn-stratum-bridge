@@ -164,6 +164,10 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
     <div class="value">{{.Workers}}</div>
   </div>
 </div>
+<div class="card">
+  <div class="label">Network Hashrate</div>
+  <div class="value">{{printf "%.2f MH/s" .NetHash}}</div>
+</div>
 
 {{if .LiveWorkers}}
 <h3>Current Workers</h3>
@@ -361,6 +365,7 @@ type statsPageData struct {
         TotalOneHrGHs        float64
         TotalTwentyFourHrGHs float64
         TotalBlocksFound     int64
+	NetHash float64
 }
 
 // StartWebUI registers HTTP handlers and starts the web UI server on the given
@@ -428,6 +433,9 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
                 if totalConfirmed > 0 {
                     bluePercent = float64(blue) / float64(totalConfirmed) * 100
                 }
+                netHash := 0.0
+                netHash = DiffToHash(sh.soloDiff) / 1e6  // H/s to MH/s
+
 		data := statsPageData{
 			Address:     addr,
 			Blocks:      blocks,
@@ -443,6 +451,7 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
     			TotalOneHrGHs:        totalOneHr,
                         TotalTwentyFourHrGHs: total24Hr,
                         TotalBlocksFound:     alltotalBlocks,
+			NetHash: netHash,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {

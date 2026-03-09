@@ -3,6 +3,7 @@ package gostratum
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -19,7 +20,8 @@ func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumLis
 		err := readFromConnection(connection, func(line string) error {
 			event, err := UnmarshalEvent(line)
 			if err != nil {
-				ctx.Logger.Error("error unmarshalling event", zap.String("raw", line))
+				// Demote parse failures from Error -> Debug
+				ctx.Logger.Debug("failed to parse client line, ignoring", zap.String("raw", line))
 				return err
 			}
 			return s.HandleEvent(ctx, event)
@@ -34,7 +36,8 @@ func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumLis
 			return ctx.parentContext.Err() // parent context cancelled
 		}
 		if err != nil { // actual error
-			ctx.Logger.Error("error reading from socket", zap.Error(err))
+			// Demote socket read errors to Debug to reduce spam
+			ctx.Logger.Debug("error reading from socket", zap.Error(err))
 			return err
 		}
 	}
@@ -49,16 +52,31 @@ func readFromConnection(connection net.Conn, cb LineCallback) error {
 	}
 
 	buffer := make([]byte, 8096*2)
-	_, err := connection.Read(buffer)
-	if err != nil {
+	n, err := connection.Read(buffer)
+	if err != nil && !(err == io.EOF && n > 0) {
+		// If no bytes were read, treat this as a real error.
+		// Wrap and return so caller can decide how to handle it.
 		return errors.Wrapf(err, "error reading from connection")
 	}
+
+	// Truncate to the number of bytes actually read
+	if n > 0 {
+		buffer = buffer[:n]
+	} else {
+		buffer = buffer[:0]
+	}
+
+	// remove NULs and scan only the bytes we received
 	buffer = bytes.ReplaceAll(buffer, []byte("\x00"), nil)
 	scanner := bufio.NewScanner(strings.NewReader(string(buffer)))
 	for scanner.Scan() {
 		if err := cb(scanner.Text()); err != nil {
 			return err
 		}
+	}
+	// If scanner encounters an error, return it (optional)
+	if err := scanner.Err(); err != nil {
+		return errors.Wrapf(err, "scanner error")
 	}
 	return nil
 }

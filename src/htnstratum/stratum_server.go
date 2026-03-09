@@ -55,6 +55,10 @@ type BridgeConfig struct {
 	// GBTCacheTTL is how long to cache GetBlockTemplate responses per payout address.
 	// 0 disables caching. For a 5 BPS network, ~150ms is a good starting point.
 	GBTCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
+
+	// WebPort is the address:port for the miner stats web UI (e.g. ":8080").
+	// Leave empty to disable the web UI.
+	WebPort string `yaml:"web_port"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -102,6 +106,18 @@ func ListenAndServe(cfg BridgeConfig) error {
 		return err
 	}
 
+	// Initialise the SQLite mining database.
+	miningDB, err := InitDB("mining.db")
+	if err != nil {
+		return fmt.Errorf("failed to open mining database: %w", err)
+	}
+	defer miningDB.Close()
+
+	// Start the miner stats web UI if a port is configured.
+	if cfg.WebPort != "" {
+		StartWebUI(miningDB, cfg.WebPort, logger)
+	}
+
 	if cfg.HealthCheckPort != "" {
 		logger.Info("enabling health check on port " + cfg.HealthCheckPort)
 		http.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +129,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats, htnApi.invalidateGBTCache)
+	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats, htnApi.invalidateGBTCache, miningDB)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4

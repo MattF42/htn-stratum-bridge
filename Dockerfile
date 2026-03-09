@@ -24,5 +24,7 @@ COPY cmd/htnbridge/config.yaml /app/config.yaml
 
 RUN chmod +x /app/htnbridge
 
+EXPOSE 8080
+
 ENTRYPOINT ["/app/htnbridge"]
 CMD ["--solo", "true"]

@@ -163,6 +163,22 @@ func (d *MiningDB) GetBlocksByWalletPaged(walletAddr string, limit, offset int) 
 	return out, rows.Err()
 }
 
+
+func (db *MiningDB) GetBlockCountsByWallet(wallet string) (blue, red, pending int) {
+    query := `SELECT 
+        SUM(CASE WHEN status = 'blue' THEN 1 ELSE 0 END) as blue,
+        SUM(CASE WHEN status = 'red' THEN 1 ELSE 0 END) as red,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+        FROM block_rewards WHERE wallet_address = ?`
+    row := db.db.QueryRow(query, wallet)
+    err := row.Scan(&blue, &red, &pending)
+    if err != nil {
+        // Handle error (log or return 0s)
+        return 0, 0, 0
+    }
+    return
+}
+
 // Close closes the underlying database connection.
 func (d *MiningDB) Close() error {
 	return d.db.Close()

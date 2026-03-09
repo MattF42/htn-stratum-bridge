@@ -59,6 +59,7 @@ type BridgeConfig struct {
 	// WebPort is the address:port for the miner stats web UI (e.g. ":8080").
 	// Leave empty to disable the web UI.
 	WebPort string `yaml:"web_port"`
+	StratumAddr string `yaml:"stratum_addr"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -128,8 +129,8 @@ func ListenAndServe(cfg BridgeConfig) error {
 
 	// Start the miner stats web UI if a port is configured.  We pass the
 	// shareHandler so that the /stats page can display live worker stats.
-	if cfg.WebPort != "" {
-		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler)
+	if cfg.WebPort != "" && cfg.StratumAddr != "" {
+		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr)
 	}
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {

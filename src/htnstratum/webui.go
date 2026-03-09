@@ -62,10 +62,12 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   button:hover{background:#00d4ff;color:#1a1a2e}
   .error{color:#ff6b6b;margin-top:8px}
 </style>
+<meta http-equiv="refresh" content="30">
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
 <h2>Miner Earnings &amp; Stats</h2>
+<p>Connect your miner to <code>{{.StratumAddr}}</code></p>
 <p>Enter your wallet address to view historical block rewards.</p>
 <form action="/stats" method="GET">
   <input type="text" name="address" placeholder="hoosat:qr…" required>
@@ -142,10 +144,10 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <div class="addr">{{.Address}}</div>
 
 <div class="summary">
-  <div class="card">
-    <div class="label">Blocks Found</div>
-    <div class="value">{{.TotalBlocks}}</div>
-  </div>
+<div class="card">
+  <div class="label">Blocks Found</div>
+  <div class="value">Blue: {{.Blue}} / Red: {{.Red}} / Pending: {{.Pending}} ({{printf "%.1f" .BluePercent}}%)</div>
+</div>
   <div class="card">
     <div class="label">Total Earned</div>
     <div class="value">{{fmtAtoms .TotalAtoms}}</div>
@@ -331,13 +333,17 @@ type statsPageData struct {
 	TotalAtoms  uint64
 	Workers     int
 	LiveWorkers []WorkerLiveStat
+        Blue        int     // New
+        Red         int     // New
+        Pending     int     // New
+        BluePercent float64 // New
 }
 
 // StartWebUI registers HTTP handlers and starts the web UI server on the given
 // port (e.g. ":8080").  It is non-blocking: the listener runs in a goroutine.
 // sh may be nil if no share handler has been created yet (workers section will
 // simply be omitted from the stats page).
-func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler) {
+func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string) {
 	mux := http.NewServeMux()
 
 	// GET / — wallet address input form
@@ -346,8 +352,9 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			http.NotFound(w, r)
 			return
 		}
+		data := struct{ StratumAddr string }{StratumAddr: stratumAddr}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := indexTmpl.Execute(w, nil); err != nil {
+		if err := indexTmpl.Execute(w, data); err != nil {
 			logger.Warn("webui: index template error", zap.Error(err))
 		}
 	})
@@ -385,6 +392,12 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 
 		filteredWorkers := getLiveWorkerStats(sh, addr)
+                blue, red, pending := db.GetBlockCountsByWallet(addr)  // New
+                totalConfirmed := blue + red
+                bluePercent := 0.0
+                if totalConfirmed > 0 {
+                    bluePercent = float64(blue) / float64(totalConfirmed) * 100
+                }
 		data := statsPageData{
 			Address:     addr,
 			Blocks:      blocks,
@@ -392,6 +405,10 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			TotalAtoms:  totalAtoms,
 			Workers:     len(filteredWorkers),
 			LiveWorkers: getLiveWorkerStats(sh, addr),
+                        Blue:        blue,
+    			Red:         red, 
+    			Pending:     pending,
+    			BluePercent: bluePercent,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {
@@ -444,6 +461,28 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			logger.Warn("webui: json encode error", zap.Error(err))
 		}
 	})
+        // GET /api/block_counts?address=<addr> — JSON API for block status counts
+	mux.HandleFunc("/api/block_counts", func(w http.ResponseWriter, r *http.Request) {
+    	addr := strings.TrimSpace(r.URL.Query().Get("address"))
+    	if addr == "" {
+        	http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
+        	return
+    	}
+    	blue, red, pending := db.GetBlockCountsByWallet(addr)  // Implement in mining_db.go
+    	totalConfirmed := blue + red
+    	bluePercent := 0.0
+    	if totalConfirmed > 0 {
+        	bluePercent = float64(blue) / float64(totalConfirmed) * 100
+    	}
+    	w.Header().Set("Content-Type", "application/json")
+    	json.NewEncoder(w).Encode(map[string]interface{}{
+        	"blue":         blue,
+        	"red":          red,
+        	"pending":      pending,
+        	"blue_percent": bluePercent,
+    	})
+	})
+
 
 	logger.Info("starting web UI on " + port)
 	go func() {

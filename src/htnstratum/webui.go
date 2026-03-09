@@ -63,9 +63,11 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   .error{color:#ff6b6b;margin-top:8px}
 </style>
 <meta http-equiv="refresh" content="30">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
+<h5>By Foztor 0.5% Pool Fee</h5>
 <h2>Miner Earnings &amp; Stats</h2>
 <p>Connect your miner to <code>{{.StratumAddr}}</code></p>
 <p>Enter your wallet address to view historical block rewards.</p>
@@ -136,9 +138,11 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .pagination button:disabled{opacity:0.4;cursor:default}
   .pagination .page-info{font-size:13px;color:#aaa}
 </style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
+<h5>By Foztor - 0.5% Pool Fee</h5>
 <div class="back"><a href="/">← Search another address</a></div>
 <h2>Stats for</h2>
 <div class="addr">{{.Address}}</div>
@@ -146,7 +150,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <div class="summary">
 <div class="card">
   <div class="label">Blocks Found</div>
-  <div class="value">Blue: {{.Blue}} / Red: {{.Red}} / Pending: {{.Pending}} ({{printf "%.1f" .BluePercent}}%)</div>
+  <div class="value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: red;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
 </div>
   <div class="card">
     <div class="label">Total Earned</div>
@@ -204,7 +208,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span class="badge-orphaned">orphaned</span>{{else}}<span class="badge-pending">pending</span>{{end}}{{else}}{{fmtAtoms $b.RewardAtoms}}{{end}}</td>
+  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span class="badge-orphaned">orphaned</span>{{else}}<span class="badge-pending">pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
@@ -257,7 +261,7 @@ function renderTable(blocks) {
     var ageMin = (nowMs - b.Timestamp) / 60000;
     if (b.RewardAtoms === 0) {
       if (ageMin > 10) {
-        rewardCell = '<span class="badge-orphaned">orphaned</span>';
+        rewardCell = '<span class="badge-orphaned">RED BLOCK</span>';
       } else {
         rewardCell = '<span class="badge-pending">pending</span>';
       }

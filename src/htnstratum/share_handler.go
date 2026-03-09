@@ -59,6 +59,8 @@ type shareHandler struct {
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
 	miningDB           *MiningDB // may be nil if DB is not configured
+	lastRewardFetch time.Time
+        cachedReward    uint64
 }
 
 type BanInfo struct {
@@ -498,8 +500,9 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // intended to run in a background goroutine and retries a few times to
 // handle propagation latency.  The goroutine is fire-and-forget and will
 // exit once the reward is found or all retries are exhausted.
+
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
-    time.Sleep(10 * time.Second)
+    time.Sleep(30 * time.Second)  // Keep delay
     const (
         maxAttempts = 5
         retryDelay  = 10 * time.Second
@@ -511,33 +514,37 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
         }
         br, err := sh.hoosat.GetBlock(blockHash, true)
         if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
-            // log.Printf("Error getting Block %s", blockHash)
+            log.Printf("Error getting Block %s", blockHash)
             continue
         }
-	var status string
+        var status string
         var reward uint64
         if br.Block.VerboseData.IsChainBlock {
             // log.Printf("Block %s: is BLUE :)", blockHash)
-	    attempt += 10
-	    status = "blue"
-            // Fetch current block reward from template
-            template, err := sh.hoosat.GetBlockTemplate("hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s","")
-            if err == nil && template != nil && len(template.Block.Transactions) > 0 {
-                cb := template.Block.Transactions[0]
-                if len(cb.Outputs) > 0 {
-                    reward = cb.Outputs[0].Amount  // Estimated reward per block
-                    // log.Printf("Block %s: estimated reward %d atoms", blockHash, reward)
+            status = "blue"
+            attempt += 10
+            // Fetch reward only if cache is stale (10 minutes)
+            if time.Since(sh.lastRewardFetch) > 10*time.Minute {
+                template, err := sh.hoosat.GetBlockTemplate("hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s", "")
+                if err == nil && template != nil && len(template.Block.Transactions) > 0 {
+                    cb := template.Block.Transactions[0]
+                    if len(cb.Outputs) > 0 {
+                        sh.cachedReward = cb.Outputs[0].Amount
+                        sh.lastRewardFetch = time.Now()
+                        log.Printf("Updated cached reward: %d atoms", sh.cachedReward)
+                    }
                 }
             }
+            reward = sh.cachedReward
         } else {
-            log.Printf("Block %s: is RED :(", blockHash)
-	    status = "red"
+            // log.Printf("Block %s: is RED :(", blockHash)
+            status = "red"
         }
         if reward == 0 {
             continue
         }
         if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
-            // log.Printf("failed to update reward for block %s: %v", blockHash, err)
+            log.Printf("failed to update block %s: %v", blockHash, err)
         }
         return
     }

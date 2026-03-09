@@ -83,6 +83,7 @@ They are directly mined by you</h5>
 
 // statsTmpl renders the per-wallet stats page.
 var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
+	"div": func(a, b float64) float64 { return a / b },
 	"fmtAtoms": func(atoms uint64) string {
 		// Display as HTN with 8 decimal places (1 HTN = 1e8 atoms)
 		htn := float64(atoms) / 1e8
@@ -161,7 +162,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   </div>
   <div class="card">
   <div class="label">Current Workers / Network Hashrate</div>
-  <div class="value">{{.Workers}} / {{printf "%.2f MH/s" .NetHash}}</div>
+  <div class="value">{{.Workers}} / {{if ge .NetHash 1000.0}}{{printf "%.2f GH/s" (div .NetHash 1000.0)}}{{else}}{{printf "%.2f MH/s" .NetHash}}{{end}}</div>
 </div>
 </div>
 

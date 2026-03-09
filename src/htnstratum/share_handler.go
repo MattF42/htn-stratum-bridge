@@ -539,6 +539,9 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
         } else {
             // log.Printf("Block %s: is RED :(", blockHash)
             status = "red"
+            if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
+                log.Printf("failed to update block %s: %v", blockHash, err)
+            }
         }
         if reward == 0 {
             continue

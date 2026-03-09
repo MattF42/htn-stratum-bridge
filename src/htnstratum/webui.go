@@ -175,6 +175,13 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 </tr>
 </thead>
 <tbody>
+<tr style="font-weight: bold; background: #0f3460;">
+  <td>Total</td>
+  <td>{{fmtHashrate .TotalLiveGHs}}</td>
+  <td>{{fmtHashrate .TotalOneHrGHs}}</td>
+  <td>{{fmtHashrate .TotalTwentyFourHrGHs}}</td>
+  <td>{{.TotalBlocksFound}}</td>
+</tr>
 {{range .LiveWorkers}}
 <tr>
   <td>{{.Name}}</td>
@@ -208,7 +215,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span class="badge-orphaned">orphaned</span>{{else}}<span class="badge-pending">pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
+  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span class="badge-orphaned">RED BLOCK :(</span>{{else}}<span class="badge-pending">Pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
@@ -341,6 +348,10 @@ type statsPageData struct {
         Red         int     // New
         Pending     int     // New
         BluePercent float64 // New
+	TotalLiveGHs         float64
+        TotalOneHrGHs        float64
+        TotalTwentyFourHrGHs float64
+        TotalBlocksFound     int64
 }
 
 // StartWebUI registers HTTP handlers and starts the web UI server on the given
@@ -396,6 +407,14 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 
 		filteredWorkers := getLiveWorkerStats(sh, addr)
+                var totalLive, totalOneHr, total24Hr float64
+		var alltotalBlocks int64
+		for _, w := range filteredWorkers {
+    		totalLive += w.LiveGHs
+    		totalOneHr += w.OneHrGHs
+    		total24Hr += w.TwentyFourHrGHs
+    		alltotalBlocks += w.BlocksFound
+		}
                 blue, red, pending := db.GetBlockCountsByWallet(addr)  // New
                 totalConfirmed := blue + red
                 bluePercent := 0.0
@@ -413,6 +432,10 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
     			Red:         red, 
     			Pending:     pending,
     			BluePercent: bluePercent,
+                        TotalLiveGHs:         totalLive,
+    			TotalOneHrGHs:        totalOneHr,
+                        TotalTwentyFourHrGHs: total24Hr,
+                        TotalBlocksFound:     alltotalBlocks,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {

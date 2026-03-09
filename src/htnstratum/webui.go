@@ -128,6 +128,11 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .copy-btn{background:none;border:none;color:#00d4ff;cursor:pointer;padding:0 4px;font-size:12px;vertical-align:middle;margin:0}
   .copy-btn:hover{color:#fff}
   h3{color:#00d4ff;margin-top:32px}
+  .pagination{display:flex;align-items:center;gap:12px;margin-top:16px}
+  .pagination button{padding:8px 18px;background:#0f3460;color:#eee;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+  .pagination button:hover:not(:disabled){background:#00d4ff;color:#1a1a2e}
+  .pagination button:disabled{opacity:0.4;cursor:default}
+  .pagination .page-info{font-size:13px;color:#aaa}
 </style>
 </head>
 <body>
@@ -179,6 +184,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 
 {{if .Blocks}}
 <h3>Block History</h3>
+<div id="block-history">
 <table>
 <thead>
 <tr>
@@ -189,7 +195,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   <th>Reward</th>
 </tr>
 </thead>
-<tbody>
+<tbody id="block-tbody">
 {{range $i, $b := .Blocks}}
 <tr>
   <td>{{$b.ID}}</td>
@@ -201,10 +207,92 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 {{end}}
 </tbody>
 </table>
+<div class="pagination">
+  <button id="btn-prev" onclick="changePage(-1)" disabled>← Previous</button>
+  <span class="page-info" id="page-info">Page 1</span>
+  <button id="btn-next" onclick="changePage(1)" {{if le .TotalBlocks 20}}disabled{{end}}>Next →</button>
+</div>
+</div>
 {{else}}
 <p>No blocks found for this address yet.</p>
 {{end}}
 <script>
+// _addr is JS-escaped by html/template's contextual escaping (safe against XSS)
+var _addr = "{{.Address}}";
+var _total = {{.TotalBlocks}};
+var _pageSize = 20;
+var _offset = 0;
+
+function changePage(dir) {
+  var newOffset = _offset + dir * _pageSize;
+  if (newOffset < 0) newOffset = 0;
+  if (newOffset >= _total) return;
+  fetchPage(newOffset);
+}
+
+function fetchPage(offset) {
+  var url = '/api/blocks?address=' + encodeURIComponent(_addr) + '&limit=' + _pageSize + '&offset=' + offset;
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      _offset = offset;
+      _total = data.total;
+      renderTable(data.blocks);
+      updatePagination();
+    })
+    .catch(function(err) { console.error('pagination fetch error', err); });
+}
+
+function renderTable(blocks) {
+  var tbody = document.getElementById('block-tbody');
+  if (!tbody) return;
+  var html = '';
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    var rewardCell;
+    var nowMs = Date.now();
+    // Timestamp is Unix milliseconds; blocks older than 10 min with no reward are orphaned
+    var ageMin = (nowMs - b.Timestamp) / 60000;
+    if (b.RewardAtoms === 0) {
+      if (ageMin > 10) {
+        rewardCell = '<span class="badge-orphaned">orphaned</span>';
+      } else {
+        rewardCell = '<span class="badge-pending">pending</span>';
+      }
+    } else {
+      rewardCell = fmtAtoms(b.RewardAtoms);
+    }
+    // Show first 8 and last 8 chars for hashes longer than 16 chars (matches server-side shortHash)
+    var shortH = b.BlockHash.length > 16 ? b.BlockHash.slice(0,8) + '\u2026' + b.BlockHash.slice(-8) : b.BlockHash;
+    var tStr = b.Timestamp ? new Date(b.Timestamp).toISOString().replace('T',' ').replace(/\..+/,' UTC') : '\u2013';
+    html += '<tr>' +
+      '<td>' + b.ID + '</td>' +
+      '<td>' + tStr + '</td>' +
+      '<td title="' + escHtml(b.BlockHash) + '">' + escHtml(shortH) +
+        '<button class="copy-btn" data-hash="' + escHtml(b.BlockHash) + '" onclick="copyHash(this)" title="Copy full hash">\u29C9</button></td>' +
+      '<td>' + escHtml(b.WorkerName) + '</td>' +
+      '<td>' + rewardCell + '</td>' +
+      '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function fmtAtoms(atoms) {
+  return (atoms / 1e8).toFixed(8) + ' HTN';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updatePagination() {
+  var page = Math.floor(_offset / _pageSize) + 1;
+  var totalPages = Math.ceil(_total / _pageSize) || 1;
+  document.getElementById('page-info').textContent = 'Page ' + page + ' of ' + totalPages;
+  document.getElementById('btn-prev').disabled = _offset <= 0;
+  document.getElementById('btn-next').disabled = _offset + _pageSize >= _total;
+}
+
 function copyHash(btn) {
   const h = btn.getAttribute('data-hash');
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -230,6 +318,8 @@ function fallbackCopy(btn, h) {
   btn.textContent = '\u2713';
   setTimeout(function() { btn.textContent = orig; }, 1500);
 }
+
+updatePagination();
 </script>
 </body>
 </html>`))
@@ -269,16 +359,18 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		limit := 200
-		if v := r.URL.Query().Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 2000 {
-				limit = n
-			}
-		}
+		const pageSize = 20
 
-		blocks, err := db.GetBlocksByWallet(addr, limit)
+		blocks, err := db.GetBlocksByWalletPaged(addr, pageSize, 0)
 		if err != nil {
 			logger.Warn("webui: db query error", zap.Error(err))
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+
+		totalBlocks, err := db.CountBlocksByWallet(addr)
+		if err != nil {
+			logger.Warn("webui: db count error", zap.Error(err))
 			http.Error(w, "database error", http.StatusInternalServerError)
 			return
 		}
@@ -296,7 +388,7 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		data := statsPageData{
 			Address:     addr,
 			Blocks:      blocks,
-			TotalBlocks: len(blocks),
+			TotalBlocks: totalBlocks,
 			TotalAtoms:  totalAtoms,
 			Workers:     len(filteredWorkers),
 			LiveWorkers: getLiveWorkerStats(sh, addr),
@@ -307,21 +399,34 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 	})
 
-	// GET /api/blocks?address=<addr>&limit=<n> — JSON API
+	// GET /api/blocks?address=<addr>&limit=<n>&offset=<n> — JSON API
 	mux.HandleFunc("/api/blocks", func(w http.ResponseWriter, r *http.Request) {
 		addr := strings.TrimSpace(r.URL.Query().Get("address"))
 		if addr == "" {
 			http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
 			return
 		}
-		limit := 200
+		limit := 20
 		if v := r.URL.Query().Get("limit"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 2000 {
 				limit = n
 			}
 		}
+		offset := 0
+		if v := r.URL.Query().Get("offset"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				offset = n
+			}
+		}
 
-		blocks, err := db.GetBlocksByWallet(addr, limit)
+		total, err := db.CountBlocksByWallet(addr)
+		if err != nil {
+			logger.Warn("webui: api db count error", zap.Error(err))
+			http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+			return
+		}
+
+		blocks, err := db.GetBlocksByWalletPaged(addr, limit, offset)
 		if err != nil {
 			logger.Warn("webui: api db query error", zap.Error(err))
 			http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
@@ -331,7 +436,11 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			blocks = []BlockRecord{}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(blocks); err != nil {
+		resp := struct {
+			Total  int           `json:"total"`
+			Blocks []BlockRecord `json:"blocks"`
+		}{Total: total, Blocks: blocks}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logger.Warn("webui: json encode error", zap.Error(err))
 		}
 	})

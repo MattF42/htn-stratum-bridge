@@ -64,7 +64,7 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>HTN Solo Mining Pol</h1>
+<h1>HTN Solo Mining Pool</h1>
 <h2>Miner Earnings &amp; Stats</h2>
 <p>Enter your wallet address to view historical block rewards.</p>
 <form action="/stats" method="GET">
@@ -108,7 +108,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HTN Stratum Bridge – Stats for {{.Address}}</title>
+<title>HTN Solo Mining Pool – Stats for {{.Address}}</title>
 <style>
   body{font-family:sans-serif;max-width:1100px;margin:40px auto;padding:0 16px;background:#1a1a2e;color:#eee}
   h1{color:#00d4ff}
@@ -136,7 +136,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 </style>
 </head>
 <body>
-<h1>HTN Stratum Bridge</h1>
+<h1>HTN Solo Mining Pool</h1>
 <div class="back"><a href="/">← Search another address</a></div>
 <h2>Stats for</h2>
 <div class="addr">{{.Address}}</div>

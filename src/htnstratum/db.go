@@ -16,6 +16,7 @@ type BlockRecord struct {
 	WalletAddress string // miner payout address
 	WorkerName    string // miner worker name
 	RewardAtoms   uint64 // block reward in smallest unit (atoms); may be updated after confirmation
+	Status	      string // "Pending", "Blue", "Red"
 }
 
 // MiningDB wraps a SQLite connection with a mutex to serialise writes,
@@ -47,7 +48,8 @@ CREATE TABLE IF NOT EXISTS block_rewards (
     block_hash     TEXT    NOT NULL UNIQUE,
     wallet_address TEXT    NOT NULL,
     worker_name    TEXT    NOT NULL DEFAULT '',
-    reward_atoms   INTEGER NOT NULL DEFAULT 0
+    reward_atoms   INTEGER NOT NULL DEFAULT 0,
+    status         TEXT DEFAULT 'pending'
 );
 CREATE INDEX IF NOT EXISTS idx_wallet ON block_rewards(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON block_rewards(timestamp);
@@ -77,13 +79,13 @@ func (d *MiningDB) RecordBlock(r BlockRecord) error {
 
 // UpdateReward sets the reward_atoms for the row identified by block_hash.
 // It is used by the async reward-lookup goroutine once the node confirms the block.
-func (d *MiningDB) UpdateReward(blockHash string, rewardAtoms uint64) error {
+func (d *MiningDB) UpdateReward(blockHash string, rewardAtoms uint64, status string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	_, err := d.db.Exec(
-		`UPDATE block_rewards SET reward_atoms = ? WHERE block_hash = ?`,
-		rewardAtoms, blockHash,
+		`UPDATE block_rewards SET reward_atoms = ?, status = ? WHERE block_hash = ?`,
+		rewardAtoms, status, blockHash,
 	)
 	return err
 }

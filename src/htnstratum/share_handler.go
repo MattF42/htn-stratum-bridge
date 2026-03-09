@@ -450,6 +450,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			WalletAddress: ctx.WalletAddr,
 			WorkerName:    ctx.WorkerName,
 			RewardAtoms:   0, // updated asynchronously once the node confirms the block
+			Status: 	"pending",
 		}
 		// log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
 		if err := sh.miningDB.RecordBlock(record); err != nil {
@@ -498,35 +499,48 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // handle propagation latency.  The goroutine is fire-and-forget and will
 // exit once the reward is found or all retries are exhausted.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
-	const (
-		maxAttempts = 5
-		retryDelay  = 3 * time.Second
-	)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Sleep before retrying (not before the first attempt).
-		if attempt > 0 {
-			time.Sleep(retryDelay)
-		}
-		br, err := sh.hoosat.GetBlock(blockHash, true)
-		if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
-			continue
-		}
-		// Sum all coinbase outputs as the total block reward.
-		var reward uint64
-		cb := br.Block.Transactions[0]
-		for _, o := range cb.Outputs {
-			if o != nil {
-				reward += o.Amount
-			}
-		}
-		if reward == 0 {
-			continue
-		}
-		if err := sh.miningDB.UpdateReward(blockHash, reward); err != nil {
-			log.Printf("failed to update reward for block %s: %v", blockHash, err)
-		}
-		return
-	}
+    time.Sleep(10 * time.Second)
+    const (
+        maxAttempts = 5
+        retryDelay  = 10 * time.Second
+    )
+    for attempt := 0; attempt < maxAttempts; attempt++ {
+        // log.Printf("Checking Block %s", blockHash)
+        if attempt > 0 {
+            time.Sleep(retryDelay)
+        }
+        br, err := sh.hoosat.GetBlock(blockHash, true)
+        if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
+            // log.Printf("Error getting Block %s", blockHash)
+            continue
+        }
+	var status string
+        var reward uint64
+        if br.Block.VerboseData.IsChainBlock {
+            // log.Printf("Block %s: is BLUE :)", blockHash)
+	    attempt += 10
+	    status = "blue"
+            // Fetch current block reward from template
+            template, err := sh.hoosat.GetBlockTemplate("hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s","")
+            if err == nil && template != nil && len(template.Block.Transactions) > 0 {
+                cb := template.Block.Transactions[0]
+                if len(cb.Outputs) > 0 {
+                    reward = cb.Outputs[0].Amount  // Estimated reward per block
+                    // log.Printf("Block %s: estimated reward %d atoms", blockHash, reward)
+                }
+            }
+        } else {
+            log.Printf("Block %s: is RED :(", blockHash)
+	    status = "red"
+        }
+        if reward == 0 {
+            continue
+        }
+        if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
+            // log.Printf("failed to update reward for block %s: %v", blockHash, err)
+        }
+        return
+    }
 }
 
 func (sh *shareHandler) startStatsThread() error {

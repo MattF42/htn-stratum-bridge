@@ -53,7 +53,7 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HTN Stratum Bridge – Miner Stats</title>
+<title>HTN Solo Mining Pool Miner Stats</title>
 <style>
   body{font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 16px;background:#1a1a2e;color:#eee}
   h1{color:#00d4ff}
@@ -64,7 +64,7 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>HTN Stratum Bridge</h1>
+<h1>HTN Solo Mining Pol</h1>
 <h2>Miner Earnings &amp; Stats</h2>
 <p>Enter your wallet address to view historical block rewards.</p>
 <form action="/stats" method="GET">

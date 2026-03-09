@@ -368,6 +368,10 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	}
 	mutableHeader := converted.Header.ToMutable()
 	mutableHeader.SetNonce(submitInfo.nonceVal)
+	converted = &externalapi.DomainBlock{  // Update converted with nonce
+        Header:       mutableHeader.ToImmutable(),
+        Transactions: converted.Transactions,
+        }
 	powState := pow.NewState(mutableHeader)
 	// fmt.Printf("Block version: %d\n", powState.BlockVersion)
 	// fmt.Printf("Block prevHeader: %s\n", powState.PrevHeader.String())
@@ -447,7 +451,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			WorkerName:    ctx.WorkerName,
 			RewardAtoms:   0, // updated asynchronously once the node confirms the block
 		}
-		log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
+		// log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
 		if err := sh.miningDB.RecordBlock(record); err != nil {
 			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
 		} else {

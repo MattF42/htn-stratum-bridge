@@ -113,11 +113,6 @@ func ListenAndServe(cfg BridgeConfig) error {
 	}
 	defer miningDB.Close()
 
-	// Start the miner stats web UI if a port is configured.
-	if cfg.WebPort != "" {
-		StartWebUI(miningDB, cfg.WebPort, logger)
-	}
-
 	if cfg.HealthCheckPort != "" {
 		logger.Info("enabling health check on port " + cfg.HealthCheckPort)
 		http.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +125,12 @@ func ListenAndServe(cfg BridgeConfig) error {
 	}
 
 	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats, htnApi.invalidateGBTCache, miningDB)
+
+	// Start the miner stats web UI if a port is configured.  We pass the
+	// shareHandler so that the /stats page can display live worker stats.
+	if cfg.WebPort != "" {
+		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler)
+	}
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4

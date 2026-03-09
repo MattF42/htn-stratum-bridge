@@ -24,7 +24,7 @@ type WorkerLiveStat struct {
 
 // getLiveWorkerStats returns a sorted snapshot of all workers currently in the
 // shareHandler's stats map.  Returns nil when sh is nil.
-func getLiveWorkerStats(sh *shareHandler) []WorkerLiveStat {
+func getLiveWorkerStats(sh *shareHandler, addr string) []WorkerLiveStat {
 	if sh == nil {
 		return nil
 	}
@@ -33,6 +33,7 @@ func getLiveWorkerStats(sh *shareHandler) []WorkerLiveStat {
 
 	out := make([]WorkerLiveStat, 0, len(sh.stats))
 	for _, v := range sh.stats {
+		if v.WalletAddr == addr {
 		out = append(out, WorkerLiveStat{
 			Name:            v.WorkerName,
 			LiveGHs:         GetAverageHashrateGHs(v),
@@ -40,6 +41,7 @@ func getLiveWorkerStats(sh *shareHandler) []WorkerLiveStat {
 			TwentyFourHrGHs: GetRollingAverageHashrateGHs(v),
 			BlocksFound:     v.BlocksFound.Load(),
 		})
+	}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -290,13 +292,14 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			}
 		}
 
+		filteredWorkers := getLiveWorkerStats(sh, addr)
 		data := statsPageData{
 			Address:     addr,
 			Blocks:      blocks,
 			TotalBlocks: len(blocks),
 			TotalAtoms:  totalAtoms,
-			Workers:     len(workers),
-			LiveWorkers: getLiveWorkerStats(sh),
+			Workers:     len(filteredWorkers),
+			LiveWorkers: getLiveWorkerStats(sh, addr),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {

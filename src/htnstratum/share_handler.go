@@ -31,6 +31,7 @@ type WorkStats struct {
 	SharesDiff         atomic.Float64
 	StaleShares        atomic.Int64
 	InvalidShares      atomic.Int64
+	WalletAddr	   string
 	WorkerName         string
 	StartTime          time.Time
 	LastShare          time.Time
@@ -137,6 +138,7 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 		stats.RollingSharesDiff = make(map[int64]float64)
 		stats.RollingStaleShares = make(map[int64]int64)
 		stats.RollingInvalidShares = make(map[int64]int64)
+		stats.WalletAddr = ctx.WalletAddr
 		sh.stats[ctx.RemoteAddr] = stats
 
 		// TODO: not sure this is the best place, nor whether we shouldn't be

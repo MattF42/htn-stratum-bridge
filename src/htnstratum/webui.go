@@ -160,13 +160,9 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
     <div class="value">{{fmtAtoms .TotalAtoms}}</div>
   </div>
   <div class="card">
-    <div class="label">Workers</div>
-    <div class="value">{{.Workers}}</div>
-  </div>
+  <div class="label">Current Workers / Network Hashrate</div>
+  <div class="value">{{.Workers}} / {{printf "%.2f MH/s" .NetHash}}</div>
 </div>
-<div class="card">
-  <div class="label">Network Hashrate</div>
-  <div class="value">{{printf "%.2f MH/s" .NetHash}}</div>
 </div>
 
 {{if .LiveWorkers}}
@@ -434,8 +430,7 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
                     bluePercent = float64(blue) / float64(totalConfirmed) * 100
                 }
                 netHash := 0.0
-                netHash = DiffToHash(sh.soloDiff) / 1e6  // H/s to MH/s
-
+                netHash = DiffToHash(sh.soloDiff) * 5 * 1000  // GH/s * bps to MH/s
 		data := statsPageData{
 			Address:     addr,
 			Blocks:      blocks,

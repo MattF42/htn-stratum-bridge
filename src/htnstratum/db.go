@@ -118,6 +118,49 @@ func (d *MiningDB) GetBlocksByWallet(walletAddr string, limit int) ([]BlockRecor
 	return out, rows.Err()
 }
 
+// CountBlocksByWallet returns the total number of block records for a wallet.
+func (d *MiningDB) CountBlocksByWallet(walletAddr string) (int, error) {
+	var count int
+	err := d.db.QueryRow(
+		`SELECT COUNT(*) FROM block_rewards WHERE wallet_address = ?`,
+		walletAddr,
+	).Scan(&count)
+	return count, err
+}
+
+// GetBlocksByWalletPaged returns `limit` block records for the given wallet
+// starting at `offset`, ordered newest-first.  If limit <= 0 it defaults to 20.
+func (d *MiningDB) GetBlocksByWalletPaged(walletAddr string, limit, offset int) ([]BlockRecord, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := d.db.Query(
+		`SELECT id, timestamp, block_hash, wallet_address, worker_name, reward_atoms
+		 FROM block_rewards
+		 WHERE wallet_address = ?
+		 ORDER BY timestamp DESC
+		 LIMIT ? OFFSET ?`,
+		walletAddr, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []BlockRecord
+	for rows.Next() {
+		var r BlockRecord
+		if err := rows.Scan(&r.ID, &r.Timestamp, &r.BlockHash, &r.WalletAddress, &r.WorkerName, &r.RewardAtoms); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Close closes the underlying database connection.
 func (d *MiningDB) Close() error {
 	return d.db.Close()

@@ -473,13 +473,15 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	sh.submitLock.Lock()
 	defer sh.submitLock.Unlock()
         // Refuse to submit blocks when the node is not synced.
-	info, err := sh.hoosat.GetInfo()
-	if err != nil {
-		info.IsSynced = false
-	}
-	if !info.IsSynced {
-		return errors.New("node is not synced; refusing to submit block")
-	}
+        info, err := sh.hoosat.GetInfo()
+    	isSynced := false
+    	if err == nil && info != nil {
+        	isSynced = info.IsSynced
+    	}
+    	if !isSynced {
+        	return errors.New("node is not synced; refusing to submit block")
+    	}
+
 	mutable := block.Header.ToMutable()
 	mutable.SetNonce(submitInfo.nonceVal)
 	block = &externalapi.DomainBlock{

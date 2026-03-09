@@ -178,13 +178,6 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 </tr>
 </thead>
 <tbody>
-<tr style="font-weight: bold; background: #0f3460;">
-  <td>Total</td>
-  <td>{{fmtHashrate .TotalLiveGHs}}</td>
-  <td>{{fmtHashrate .TotalOneHrGHs}}</td>
-  <td>{{fmtHashrate .TotalTwentyFourHrGHs}}</td>
-  <td>{{.TotalBlocksFound}}</td>
-</tr>
 {{range .LiveWorkers}}
 <tr>
   <td>{{.Name}}</td>
@@ -192,6 +185,13 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   <td>{{fmtHashrate .OneHrGHs}}</td>
   <td>{{fmtHashrate .TwentyFourHrGHs}}</td>
   <td>{{.BlocksFound}}</td>
+</tr>
+<tr style="font-weight: bold; background: #0f3460;">
+  <td>Total</td>
+  <td>{{fmtHashrate .TotalLiveGHs}}</td>
+  <td>{{fmtHashrate .TotalOneHrGHs}}</td>
+  <td>{{fmtHashrate .TotalTwentyFourHrGHs}}</td>
+  <td>{{.TotalBlocksFound}}</td>
 </tr>
 {{end}}
 </tbody>

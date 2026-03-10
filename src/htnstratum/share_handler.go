@@ -494,54 +494,66 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // exit once the reward is found or all retries are exhausted.
 
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
-    time.Sleep(30 * time.Second)  // Keep delay
+    time.Sleep(30 * time.Second) // Initial delay
     const (
-        maxAttempts = 5
-        retryDelay  = 120 * time.Second
+        maxAttempts = 10
+        retryDelay  = 60 * time.Second
     )
+
     var status string
+    status = "red" // Default
+
+    var reward uint64
     for attempt := 0; attempt < maxAttempts; attempt++ {
-        // log.Printf("Checking Block %s", blockHash)
         if attempt > 0 {
             time.Sleep(retryDelay)
         }
+        log.Printf("Attempt %d for blockhash %s",attempt,blockHash)
+
+        // Get the mined block 
         br, err := sh.hoosat.GetBlock(blockHash, true)
-        if err != nil || br == nil || br.Block == nil || len(br.Block.Transactions) == 0 {
-            log.Printf("Error getting Block %s", blockHash)
+        if err != nil || br == nil || br.Block == nil {
+            log.Printf("Error getting block %s ", blockHash)
             continue
         }
-        var reward uint64
-        status = "red" // Default
+
+        blockBlueScore := br.Block.VerboseData.BlueScore
         if br.Block.VerboseData.IsChainBlock {
-            // log.Printf("Block %s: is BLUE :)", blockHash)
             status = "blue"
-            attempt += 10
-            // Fetch reward only if cache is stale (10 minutes)
-            if time.Since(sh.lastRewardFetch) > 10*time.Minute {
-                template, err := sh.hoosat.GetBlockTemplate("hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s", "")
-                if err == nil && template != nil && len(template.Block.Transactions) > 0 {
-                    cb := template.Block.Transactions[0]
+
+            // Check for the next blue block (BlueScore = blockBlueScore + 1)
+            dag, err := sh.hoosat.GetBlockDAGInfo()
+            if err != nil {
+                continue
+            }
+            for _, tipHash := range dag.TipHashes {
+                tipBr, err := sh.hoosat.GetBlock(tipHash, true)
+                if err != nil || tipBr == nil || tipBr.Block == nil {
+                    continue
+                }
+                if tipBr.Block.VerboseData.IsChainBlock && tipBr.Block.VerboseData.BlueScore == blockBlueScore + 1 {
+                    // Found the next blue block
+                    cb := tipBr.Block.Transactions[0]
                     if len(cb.Outputs) > 0 {
-                        sh.cachedReward = cb.Outputs[0].Amount
-                        sh.lastRewardFetch = time.Now()
-                        // log.Printf("Updated cached reward: %d atoms", sh.cachedReward)
+                        reward = cb.Outputs[0].Amount
+                        log.Printf("Found next blue block with reward of %d for blockhash %s", reward, blockHash)
+                        break
                     }
                 }
             }
-            reward = sh.cachedReward
-        }
-        if reward == 0 {
-            continue
-        }
+            if reward > 0 {
+                break
+            }
+        } // End Blue Block
+    } // End Retry Loop
+
+    if status == "blue"  {
         if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
-            log.Printf("failed to update block %s: %v", blockHash, err)
+            log.Printf("failed to update BLUE block %s: %v", blockHash, err)
         }
-        return
-    } // End of loop
-    // Now the block is either "Blue" or 10 minutes have passed
-    if status == "red" {
-          if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
-                  log.Printf("failed to update block %s: %v", blockHash, err)
+    } else {
+        if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
+                  log.Printf("failed to update RED block %s: %v", blockHash, err)
               }
     }
 }

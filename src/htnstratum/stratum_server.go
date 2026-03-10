@@ -131,7 +131,27 @@ func ListenAndServe(cfg BridgeConfig) error {
 	// shareHandler so that the /stats page can display live worker stats.
 	if cfg.WebPort != "" && cfg.StratumAddr != "" {
 		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr)
+		// Recover pending rewards on startup
+		rows, err := miningDB.db.Query("SELECT block_hash FROM block_rewards WHERE status == 'pending'")
+		if err != nil {
+    		logger.Error("Error querying pending blocks", zap.Error(err))
+		} else {
+    		defer rows.Close()
+    		for rows.Next() {
+        		var blockHash string
+        		if err := rows.Scan(&blockHash); err != nil {
+            		logger.Error("Error scanning block hash", zap.Error(err))
+            		continue
+        		}
+        		go shareHandler.fetchAndUpdateReward(blockHash)
+    		}
+		}
 	}
+
+
+
+
+
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4

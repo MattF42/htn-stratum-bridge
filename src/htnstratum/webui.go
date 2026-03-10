@@ -308,13 +308,13 @@ function renderTable(blocks) {
     rewardCell = '<span style="color: red;">RED BLOCK</span>';
   } else {
     // For pending, check if stale (older than 10 min)
-    var nowMs = Date.now();
-    var ageMin = (nowMs - b.Timestamp) / 60000;
-    if (ageMin > 10) {
-	    rewardCell = '<span style="color: red;">RED BLOCK</span>';
-    } else {
+    // var nowMs = Date.now();
+    // var ageMin = (nowMs - b.Timestamp) / 60000;
+    // if (ageMin > 10) {
+	    // rewardCell = '<span style="color: red;">RED BLOCK</span>';
+    // } else {
       rewardCell = '<span class="badge-pending">Pending</span>';
-    }
+    // }
   }
     // Show first 8 and last 8 chars for hashes longer than 16 chars (matches server-side shortHash)
     var shortH = b.BlockHash.length > 16 ? b.BlockHash.slice(0,8) + '\u2026' + b.BlockHash.slice(-8) : b.BlockHash;

@@ -246,26 +246,23 @@ func findMinedBluesFromMergeSet(api *HtnApi, hashes []string) []minedBlue {
 func fetchAddedChainBlocksFrom(api *HtnApi, startHash string, capLimit int) ([]*appmessage.GetBlockResponseMessage, error) {
 	// Prefer VSPC: efficient incremental chain delta
 	if startHash != "" {
-		if resp, err := api.hoosat.GetVirtualSelectedParentChainFromBlock(startHash, false); err == nil && resp != nil {
-			// Expect the typed response in the current SDK
-			if v, ok := any(resp).(*appmessage.GetVirtualSelectedParentChainFromBlockResponseMessage); ok && v != nil && len(v.AddedChainBlockHashes) > 0 {
-				hashes := v.AddedChainBlockHashes
-				// Cap to most recent capLimit entries
-				if capLimit > 0 && len(hashes) > capLimit {
-					hashes = hashes[len(hashes)-capLimit:]
-				}
-				// Fetch blocks newest-first
-				out := make([]*appmessage.GetBlockResponseMessage, 0, len(hashes))
-				for i := len(hashes) - 1; i >= 0; i-- {
-					h := hashes[i]
-					br, err := api.hoosat.GetBlock(h, true) // include tx to parse coinbase
-					if err != nil || br == nil || br.Block == nil || br.Block.VerboseData == nil {
-						continue
-					}
-					out = append(out, br)
-				}
-				return out, nil
+		if resp, err := api.hoosat.GetVirtualSelectedParentChainFromBlock(startHash, false); err == nil && resp != nil && len(resp.AddedChainBlockHashes) > 0 {
+			hashes := resp.AddedChainBlockHashes
+			// Cap to most recent capLimit entries
+			if capLimit > 0 && len(hashes) > capLimit {
+				hashes = hashes[len(hashes)-capLimit:]
 			}
+			// Fetch blocks newest-first
+			out := make([]*appmessage.GetBlockResponseMessage, 0, len(hashes))
+			for i := len(hashes) - 1; i >= 0; i-- {
+				h := hashes[i]
+				br, err := api.hoosat.GetBlock(h, true) // include tx to parse coinbase
+				if err != nil || br == nil || br.Block == nil || br.Block.VerboseData == nil {
+					continue
+				}
+				out = append(out, br)
+			}
+			return out, nil
 		}
 	}
 

@@ -299,9 +299,9 @@ function renderTable(blocks) {
     var b = blocks[i];
     // console.log("status is " + b.status + " or " + b.Status);
     var rewardCell;
-    var nowMs = Date.now();
+    // var nowMs = Date.now();
     // Timestamp is Unix milliseconds; blocks older than 10 min with no reward are orphaned
-    var ageMin = (nowMs - b.Timestamp) / 60000;
+    // var ageMin = (nowMs - b.Timestamp) / 60000;
     if (b.Status === 'blue') {
     rewardCell = '<span style="color: green;">' + fmtAtoms(b.RewardAtoms) + '</span>';
   } else if (b.Status === 'red') {

@@ -114,41 +114,36 @@ func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateG
 
 func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats {
 	sh.statsLock.Lock()
+	defer sh.statsLock.Unlock()
+
 	var stats *WorkStats
 	found := false
+	var key string
 	if ctx.WorkerName != "" {
-		stats, found = sh.stats[ctx.WorkerName]
+		key = ctx.WalletAddr + "." + ctx.WorkerName
+		stats, found = sh.stats[key]
+	} else {
+		key = ctx.RemoteAddr
+		stats, found = sh.stats[key]
 	}
-	if !found { // no worker name, check by remote address
-		stats, found = sh.stats[ctx.RemoteAddr]
-		if found {
-			// no worker name, but remote addr is there
-			// so replacet the remote addr with the worker names
-			if ctx.WorkerName != "" {
-				delete(sh.stats, ctx.RemoteAddr)
-				stats.WorkerName = ctx.WorkerName
-				sh.stats[ctx.WorkerName] = stats
-			}
-		}
-	}
-	if !found { // legit doesn't exist, create it
+	if !found {
 		stats = &WorkStats{}
 		stats.LastShare = time.Now()
-		stats.WorkerName = ctx.RemoteAddr
+		stats.WorkerName = ctx.WorkerName
+		if stats.WorkerName == "" {
+			stats.WorkerName = ctx.RemoteAddr
+		}
 		stats.StartTime = time.Now()
 		stats.RollingShares = make(map[int64]int64)
 		stats.RollingSharesDiff = make(map[int64]float64)
 		stats.RollingStaleShares = make(map[int64]int64)
 		stats.RollingInvalidShares = make(map[int64]int64)
 		stats.WalletAddr = ctx.WalletAddr
-		sh.stats[ctx.RemoteAddr] = stats
+		sh.stats[key] = stats
 
-		// TODO: not sure this is the best place, nor whether we shouldn't be
-		// resetting on disconnect
 		InitWorkerCounters(ctx)
 	}
 
-	sh.statsLock.Unlock()
 	return stats
 }
 
@@ -156,17 +151,12 @@ func (sh *shareHandler) removeStats(ctx *gostratum.StratumContext) {
 	sh.statsLock.Lock()
 	defer sh.statsLock.Unlock()
 
-	// Try to remove by workername first (if set), then by remote address.
-	// Delete both keys if present to be safe.
 	if ctx.WorkerName != "" {
-		if _, ok := sh.stats[ctx.WorkerName]; ok {
-			delete(sh.stats, ctx.WorkerName)
-		}
+		key := ctx.WalletAddr + "." + ctx.WorkerName
+		delete(sh.stats, key)
 	}
 	if ctx.RemoteAddr != "" {
-		if _, ok := sh.stats[ctx.RemoteAddr]; ok {
-			delete(sh.stats, ctx.RemoteAddr)
-		}
+		delete(sh.stats, ctx.RemoteAddr)
 	}
 }
 

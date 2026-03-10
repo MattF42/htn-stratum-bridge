@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"log"
 
 	"go.uber.org/zap"
 )
@@ -30,9 +31,12 @@ func getLiveWorkerStats(sh *shareHandler, addr string) []WorkerLiveStat {
 	}
 	sh.statsLock.Lock()
 	defer sh.statsLock.Unlock()
+		// log.Printf("DEBUG: Query addr = %q", addr)
+
 
 	out := make([]WorkerLiveStat, 0, len(sh.stats))
 	for _, v := range sh.stats {
+				// log.Printf("DEBUG: Worker %q has WalletAddr %q", v.WorkerName, v.WalletAddr)
 		if v.WalletAddr == addr {
 		out = append(out, WorkerLiveStat{
 			Name:            v.WorkerName,
@@ -44,6 +48,8 @@ func getLiveWorkerStats(sh *shareHandler, addr string) []WorkerLiveStat {
 	}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+		// log.Printf("DEBUG: Found %d matching workers", len(out))
+
 	return out
 }
 

@@ -16,11 +16,11 @@ import (
 
 // WorkerLiveStat holds a point-in-time snapshot of live stats for one worker.
 type WorkerLiveStat struct {
-	Name            string
-	LiveGHs         float64
-	OneHrGHs        float64
-	TwentyFourHrGHs float64
-	BlocksFound     int64
+	Name            string  `json:"name"`
+	LiveGHs         float64 `json:"live_ghs"`
+	OneHrGHs        float64 `json:"one_hr_ghs"`
+	TwentyFourHrGHs float64 `json:"twenty_four_hr_ghs"`
+	BlocksFound     int64   `json:"blocks_found"`
 }
 
 // getLiveWorkerStats returns a sorted snapshot of all workers currently in the
@@ -146,13 +146,15 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .pagination button:hover:not(:disabled){background:#00d4ff;color:#1a1a2e}
   .pagination button:disabled{opacity:0.4;cursor:default}
   .pagination .page-info{font-size:13px;color:#aaa}
+  #refresh-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center}
+  #refresh-overlay .refresh-box{background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:20px 40px;color:#00d4ff;font-size:16px}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
-<meta http-equiv="refresh" content="60">
 </head>
 <body>
+<div id="refresh-overlay"><div class="refresh-box">⟳ Refreshing…</div></div>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor - 0.5% Pool Fee<BR>Page automatically reloads every 30 seconds</h5>
+<h5>By Foztor - 0.5% Pool Fee<BR>Stats content refreshes every 30 seconds</h5>
 <div class="back"><a href="/">← Change Wallet</a></div>
 <h2><span class="addr">Stats for: {{.Address}}</span> <span id="copyIcon" onclick="copyToClipboard('{{.Address}}')" style="cursor: pointer; margin-left: 5px;" title="Copy to clipboard">⧉</span></h2>
 <div id="ping" style="position: fixed; top: 10px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px;">Ping: -- ms</div>
@@ -186,18 +188,19 @@ function copyToClipboard() {
 <div class="summary">
 <div class="card">
   <div class="label">Lifetime Blocks</div>
-  <div class="value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: red;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
+  <div class="value" id="lifetime-blocks-value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: red;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
 </div>
   <div class="card">
     <div class="label">Lifetime Mined</div>
-    <div class="value">{{fmtAtoms .TotalAtoms}}</div>
+    <div class="value" id="lifetime-mined-value">{{fmtAtoms .TotalAtoms}}</div>
   </div>
   <div class="card">
     <div class="label">Current Workers</div>
-    <div class="value">{{.Workers}}</div>
+    <div class="value" id="workers-count-value">{{.Workers}}</div>
   </div>
 </div>
 {{if .LiveWorkers}}
+<div id="workers-section">
 <h3>Current Workers</h3>
 <table>
 <thead>
@@ -209,7 +212,7 @@ function copyToClipboard() {
   <th>Blocks Found</th>
 </tr>
 </thead>
-<tbody>
+<tbody id="workers-tbody">
 {{range .LiveWorkers}}
 <tr>
   <td>{{.Name}}</td>
@@ -219,7 +222,7 @@ function copyToClipboard() {
   <td>{{.BlocksFound}}</td>
 </tr>
 {{end}}
-<tr style="font-weight: bold; background: #0f3460;">
+<tr id="workers-total-row" style="font-weight: bold; background: #0f3460;">
   <td>Total</td>
   <td>{{fmtHashrate .TotalLiveGHs}}</td>
   <td>{{fmtHashrate .TotalOneHrGHs}}</td>
@@ -228,6 +231,7 @@ function copyToClipboard() {
 </tr>
 </tbody>
 </table>
+</div>
 {{end}}
 
 {{if .Blocks}}
@@ -374,6 +378,114 @@ function fallbackCopy(btn, h) {
 }
 
 updatePagination();
+
+// ── Auto-refresh (every 30 s) ─────────────────────────────────────────────
+function _showOverlay() {
+  var el = document.getElementById('refresh-overlay');
+  if (el) { el.style.display = 'flex'; }
+}
+function _hideOverlay() {
+  var el = document.getElementById('refresh-overlay');
+  if (el) { el.style.display = 'none'; }
+}
+
+// Mirror of Go stringifyHashrate: input is GH/s.
+function _fmtHashrate(ghs) {
+  var units = ['H/s','KH/s','MH/s','GH/s','TH/s','PH/s','EH/s','ZH/s','YH/s'];
+  var hr, unit;
+  if (ghs * 1000000 < 1) {
+    hr = ghs * 1e9; unit = units[0];
+  } else if (ghs * 1000 < 1) {
+    hr = ghs * 1e6; unit = units[1];
+  } else if (ghs < 1) {
+    hr = ghs * 1000; unit = units[2];
+  } else if (ghs < 1000) {
+    hr = ghs; unit = units[3];
+  } else {
+    var divs = [1000, 1e6, 1e9, 1e12, 1e15];
+    hr = ghs; unit = units[3];
+    for (var i = 0; i < divs.length; i++) {
+      var v = ghs / divs[i];
+      if (v < 1000) { hr = v; unit = units[4 + i]; break; }
+    }
+  }
+  return hr.toFixed(2).replace('.', ',') + unit;
+}
+
+function _applyStats(data) {
+  // NetHash
+  var nhEl = document.getElementById('nethash');
+  if (nhEl) {
+    var nh = data.net_hash || 0;
+    nhEl.textContent = 'Net Hash: ' + (nh >= 1000 ? (nh / 1000).toFixed(2) + ' GH/s' : nh.toFixed(2) + ' MH/s');
+  }
+  // Lifetime Blocks
+  var lbEl = document.getElementById('lifetime-blocks-value');
+  if (lbEl) {
+    lbEl.innerHTML = 'Blue: <span style="color:green;">' + (data.blue || 0) +
+      '</span> / Red: <span style="color:red;">' + (data.red || 0) +
+      '</span> / Pending: <span style="color:orange;">' + (data.pending || 0) +
+      '</span> (' + ((data.blue_percent || 0).toFixed(1)) + '%)';
+  }
+  // Lifetime Mined
+  var lmEl = document.getElementById('lifetime-mined-value');
+  if (lmEl) {
+    lmEl.textContent = ((data.total_atoms || 0) / 1e8).toFixed(8) + ' HTN';
+  }
+  // Workers count
+  var wcEl = document.getElementById('workers-count-value');
+  if (wcEl) {
+    wcEl.textContent = data.workers || 0;
+  }
+  // Workers table body
+  var wtbody = document.getElementById('workers-tbody');
+  if (wtbody && data.live_workers && data.live_workers.length > 0) {
+    var whtml = '';
+    var totLive = 0, totOneHr = 0, tot24hr = 0, totBlocks = 0;
+    for (var i = 0; i < data.live_workers.length; i++) {
+      var w = data.live_workers[i];
+      totLive += w.live_ghs || 0;
+      totOneHr += w.one_hr_ghs || 0;
+      tot24hr += w.twenty_four_hr_ghs || 0;
+      totBlocks += w.blocks_found || 0;
+      whtml += '<tr><td>' + escHtml(w.name) + '</td>' +
+        '<td>' + _fmtHashrate(w.live_ghs || 0) + '</td>' +
+        '<td>' + _fmtHashrate(w.one_hr_ghs || 0) + '</td>' +
+        '<td>' + _fmtHashrate(w.twenty_four_hr_ghs || 0) + '</td>' +
+        '<td>' + (w.blocks_found || 0) + '</td></tr>';
+    }
+    whtml += '<tr id="workers-total-row" style="font-weight:bold;background:#0f3460;">' +
+      '<td>Total</td>' +
+      '<td>' + _fmtHashrate(totLive) + '</td>' +
+      '<td>' + _fmtHashrate(totOneHr) + '</td>' +
+      '<td>' + _fmtHashrate(tot24hr) + '</td>' +
+      '<td>' + totBlocks + '</td></tr>';
+    wtbody.innerHTML = whtml;
+  }
+}
+
+function _refreshStats() {
+  _showOverlay();
+  var p1 = fetch('/api/stats?address=' + encodeURIComponent(_addr))
+    .then(function(r) { return r.json(); })
+    .then(function(data) { _applyStats(data); })
+    .catch(function(err) { console.error('stats refresh error', err); });
+  // Reset block history to page 1
+  var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) + '&limit=' + _pageSize + '&offset=0')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      _offset = 0;
+      _total = data.total;
+      renderTable(data.blocks);
+      updatePagination();
+    })
+    .catch(function(err) { console.error('blocks refresh error', err); });
+  Promise.all([p1, p2])
+    .then(_hideOverlay)
+    .catch(_hideOverlay);
+}
+
+setInterval(_refreshStats, 30000);
 </script>
 </body>
 </html>`))
@@ -551,6 +663,73 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
         	"pending":      pending,
         	"blue_percent": bluePercent,
     	})
+	})
+
+	// GET /api/stats?address=<addr> — JSON API for the auto-refresh data
+	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+		addr := strings.TrimSpace(r.URL.Query().Get("address"))
+		if addr == "" {
+			http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
+			return
+		}
+		totalAtoms, err := db.GetTotalAtomsByWallet(addr)
+		if err != nil {
+			logger.Warn("webui: api stats atoms error", zap.Error(err))
+			totalAtoms = 0
+		}
+		blue, red, pending := db.GetBlockCountsByWallet(addr)
+		totalConfirmed := blue + red
+		bluePercent := 0.0
+		if totalConfirmed > 0 {
+			bluePercent = float64(blue) / float64(totalConfirmed) * 100
+		}
+		workers := getLiveWorkerStats(sh, addr)
+		if workers == nil {
+			workers = []WorkerLiveStat{}
+		}
+		var totalLive, totalOneHr, total24Hr float64
+		var totalBlocksFound int64
+		for _, wk := range workers {
+			totalLive += wk.LiveGHs
+			totalOneHr += wk.OneHrGHs
+			total24Hr += wk.TwentyFourHrGHs
+			totalBlocksFound += wk.BlocksFound
+		}
+		netHash := 0.0
+		if sh != nil {
+			netHash = DiffToHash(sh.soloDiff) * 5 * 1000
+		}
+		w.Header().Set("Content-Type", "application/json")
+		resp := struct {
+			NetHash             float64          `json:"net_hash"`
+			TotalAtoms          uint64           `json:"total_atoms"`
+			Workers             int              `json:"workers"`
+			LiveWorkers         []WorkerLiveStat `json:"live_workers"`
+			Blue                int              `json:"blue"`
+			Red                 int              `json:"red"`
+			Pending             int              `json:"pending"`
+			BluePercent         float64          `json:"blue_percent"`
+			TotalLiveGHs        float64          `json:"total_live_ghs"`
+			TotalOneHrGHs       float64          `json:"total_one_hr_ghs"`
+			TotalTwentyFourHrGHs float64         `json:"total_twenty_four_hr_ghs"`
+			TotalBlocksFound    int64            `json:"total_blocks_found"`
+		}{
+			NetHash:              netHash,
+			TotalAtoms:           totalAtoms,
+			Workers:              len(workers),
+			LiveWorkers:          workers,
+			Blue:                 blue,
+			Red:                  red,
+			Pending:              pending,
+			BluePercent:          bluePercent,
+			TotalLiveGHs:         totalLive,
+			TotalOneHrGHs:        totalOneHr,
+			TotalTwentyFourHrGHs: total24Hr,
+			TotalBlocksFound:     totalBlocksFound,
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			logger.Warn("webui: api stats encode error", zap.Error(err))
+		}
 	})
 
 

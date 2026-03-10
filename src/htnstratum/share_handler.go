@@ -499,6 +499,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
         maxAttempts = 5
         retryDelay  = 120 * time.Second
     )
+    var status string
     for attempt := 0; attempt < maxAttempts; attempt++ {
         // log.Printf("Checking Block %s", blockHash)
         if attempt > 0 {
@@ -509,7 +510,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
             log.Printf("Error getting Block %s", blockHash)
             continue
         }
-        var status string
         var reward uint64
         if br.Block.VerboseData.IsChainBlock {
             // log.Printf("Block %s: is BLUE :)", blockHash)
@@ -523,7 +523,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
                     if len(cb.Outputs) > 0 {
                         sh.cachedReward = cb.Outputs[0].Amount
                         sh.lastRewardFetch = time.Now()
-                        log.Printf("Updated cached reward: %d atoms", sh.cachedReward)
+                        // log.Printf("Updated cached reward: %d atoms", sh.cachedReward)
                     }
                 }
             }
@@ -531,9 +531,10 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
         } else {
             // log.Printf("Block %s: is RED :(", blockHash)
             status = "red"
-            if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
-                log.Printf("failed to update block %s: %v", blockHash, err)
-            }
+	    // Bit pre-mature to do anything here - simply record status, but do not update DB yet
+            // if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
+                // log.Printf("failed to update block %s: %v", blockHash, err)
+            // }
         }
         if reward == 0 {
             continue
@@ -542,6 +543,12 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
             log.Printf("failed to update block %s: %v", blockHash, err)
         }
         return
+    } // End of loop
+    // Now the block is either "Blue" or 10 minutes have passed
+    if status == "red" {
+          if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
+                  log.Printf("failed to update block %s: %v", blockHash, err)
+              }
     }
 }
 

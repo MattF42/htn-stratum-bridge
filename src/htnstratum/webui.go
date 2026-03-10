@@ -503,7 +503,7 @@ function _startCountdown() {
 function _refreshStats() {
   _showOverlay();
   var start = Date.now();
-  var MIN_VISIBLE_MS = 1500;
+  var MIN_VISIBLE_MS = 1200;
 
   var p1 = fetch('/api/stats?address=' + encodeURIComponent(_addr))
     .then(function(r) { return r.json(); })

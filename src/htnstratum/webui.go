@@ -151,6 +151,21 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <h2>Stats for</h2>
 <div class="addr">{{.Address}}</div>
 
+<div id="ping" style="position: fixed; top: 10px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px;">Ping: -- ms</div>
+<script>
+function updatePing() {
+    const start = Date.now();
+    fetch(window.location.href, {method: 'HEAD'}).then(() => {
+        const end = Date.now();
+        document.getElementById('ping').textContent = 'Ping between browser and pool: ' + (end - start) + ' ms';
+    }).catch(() => {
+        document.getElementById('ping').textContent = 'Ping: error';
+    });
+}
+setInterval(updatePing, 15000);
+updatePing();
+</script>
+
 <div class="summary">
 <div class="card">
   <div class="label">Lifetime Blocks</div>

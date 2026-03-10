@@ -517,7 +517,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		// If it's definitely Red, we can stop and mark it
+		// At the _moment_ it is red, so no further checks this loop
 		if !br.Block.VerboseData.IsChainBlock {
 			// log.Printf("[Attempt %d] Block %s is currently RED", attempt, blockHash)
 			// We continue retrying in case it "flips" to blue via a reorg
@@ -528,7 +528,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		status = "blue"
 		// log.Printf("[Attempt %d] Block %s is BLUE. Finding successor...", attempt, blockHash)
 
-		// 2. Use your new RPC method to find the next block in the selected chain
+		// 2. Walk the chain to find the NEXT blue block where payment happens
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
 		if err != nil {
 			log.Printf("Error fetching VSP chain from %s: %v", blockHash, err)

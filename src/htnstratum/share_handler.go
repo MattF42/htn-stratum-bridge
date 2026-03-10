@@ -494,69 +494,72 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // exit once the reward is found or all retries are exhausted.
 
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
-    time.Sleep(30 * time.Second) // Initial delay
-    const (
-        maxAttempts = 10
-        retryDelay  = 60 * time.Second
-    )
+	const (
+		maxAttempts = 15
+		retryDelay  = 45 * time.Second
+	)
 
-    var status string
-    status = "red" // Default
+	var status string = "red"
+	var reward uint64 = 0
 
-    var reward uint64
-    for attempt := 0; attempt < maxAttempts; attempt++ {
-        if attempt > 0 {
-            time.Sleep(retryDelay)
-        }
-        log.Printf("Attempt %d for blockhash %s",attempt,blockHash)
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 { time.Sleep(retryDelay) }
 
-        // Get the mined block 
-        br, err := sh.hoosat.GetBlock(blockHash, true)
-        if err != nil || br == nil || br.Block == nil {
-            log.Printf("Error getting block %s ", blockHash)
-            continue
-        }
+		// 1. Get our mined block to see if it's Blue yet
+		br, err := sh.hoosat.GetBlock(blockHash, true)
+		if err != nil || br == nil || br.Block == nil { continue }
 
-        blockBlueScore := br.Block.VerboseData.BlueScore
-        if br.Block.VerboseData.IsChainBlock {
-            status = "blue"
+		if !br.Block.VerboseData.IsChainBlock {
+			log.Printf("[%d] Block %s is RED/Pending...", attempt, blockHash)
+			continue
+		}
+		status = "blue"
+		log.Printf("[%d] Block %s is Blue ... finding reward", attempt, blockHash)
 
-            // Check for the next blue block (BlueScore = blockBlueScore + 1)
-            dag, err := sh.hoosat.GetBlockDAGInfo()
-            if err != nil {
-                continue
-            }
-            for _, tipHash := range dag.TipHashes {
-                tipBr, err := sh.hoosat.GetBlock(tipHash, true)
-                if err != nil || tipBr == nil || tipBr.Block == nil {
-                    continue
-                }
-                if tipBr.Block.VerboseData.IsChainBlock && tipBr.Block.VerboseData.BlueScore == blockBlueScore + 1 {
-                    // Found the next blue block
-                    cb := tipBr.Block.Transactions[0]
-                    if len(cb.Outputs) > 0 {
-                        reward = cb.Outputs[0].Amount
-                        log.Printf("Found next blue block with reward of %d for blockhash %s", reward, blockHash)
-                        break
-                    }
-                }
-            }
-            if reward > 0 {
-                break
-            }
-        } // End Blue Block
-    } // End Retry Loop
+		// 2. Get DAG info to find the current Tip
+		dagInfo, err := sh.hoosat.GetBlockDAGInfo()
+		if err != nil || len(dagInfo.TipHashes) == 0 { continue }
+		
+		// Start walking back from the first Tip
+		currentHash := dagInfo.TipHashes[0] 
+		found := false
 
-    if status == "blue"  {
-        if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
-            log.Printf("failed to update BLUE block %s: %v", blockHash, err)
-        }
-    } else {
-        if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
-                  log.Printf("failed to update RED block %s: %v", blockHash, err)
-              }
-    }
+		// Walk back up to 20 blocks to find the "Accepting" block
+		for i := 0; i < 20; i++ {
+			currBlock, err := sh.hoosat.GetBlock(currentHash, true)
+			if err != nil || currBlock == nil || currBlock.Block == nil { break }
+
+			// Check if this block's selected parent is OUR block
+			if currBlock.Block.VerboseData.SelectedParentHash == blockHash {
+				// FOUND IT! This block's coinbase pays for our blockHash
+				if len(currBlock.Block.Transactions) > 0 {
+					cb := currBlock.Block.Transactions[0]
+					// Index 0 in coinbase is always the reward for the Selected Parent
+					if len(cb.Outputs) > 0 {
+						reward = cb.Outputs[0].Amount
+						log.Printf("Verified: %s paid %d to %s", currentHash, reward, blockHash)
+						found = true
+						break
+					}
+				}
+			}
+
+			// Move to the next parent in the chain
+			currentHash = currBlock.Block.VerboseData.SelectedParentHash
+			if currentHash == "" { break }
+		}
+
+		if found { break }
+	}
+
+	// Final Update to Database
+        log.Printf("Writing DB entry: %s status %s reward  %d ", blockHash, status, reward)
+	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
+		log.Printf("DB Error for %s: %v", blockHash, err)
+	}
 }
+
+
 
 func (sh *shareHandler) startStatsThread() error {
 	start := time.Now()

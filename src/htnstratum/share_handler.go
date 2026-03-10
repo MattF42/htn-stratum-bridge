@@ -496,15 +496,19 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
 		maxAttempts = 20
 		retryDelay  = 30 * time.Second
+		initialRetryDelay  = 60 * time.Second
 	)
 
 	var status string = "red"
 	var reward uint64 = 0
 
+	// Initial Delay to allow DAG to settle and re-org and avoid false positives
+	time.Sleep(initialRetryDelay)
+
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// if attempt > 0 {
+		 if attempt > 0 {
 			time.Sleep(retryDelay)
-		// }
+		 }
 
 		// 1. Check if our block is in the DAG and if it's Blue
 		br, err := sh.hoosat.GetBlock(blockHash, true)
@@ -517,6 +521,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		if !br.Block.VerboseData.IsChainBlock {
 			// log.Printf("[Attempt %d] Block %s is currently RED", attempt, blockHash)
 			// We continue retrying in case it "flips" to blue via a reorg
+		        status = "red"
 			continue
 		}
 
@@ -568,8 +573,11 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		// log.Printf("Block %s found in chain, but reward index not matched. Retrying...", blockHash)
 	}
 
+	if reward == 0 { status = "red" }
+
 	// 5. Final Database Update
 	// log.Printf("Finalizing %s: Status=%s, Reward=%d", blockHash, status, reward)
+
 	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
 		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}

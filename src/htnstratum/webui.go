@@ -697,7 +697,7 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 		netHash := 0.0
 		if sh != nil {
-			netHash = DiffToHash(sh.soloDiff) * 5 * 1000
+			netHash = DiffToHash(sh.soloDiff) * 5 * 1000 // GH/s × 5 bps block rate × 1000 → MH/s network estimate
 		}
 		w.Header().Set("Content-Type", "application/json")
 		resp := struct {

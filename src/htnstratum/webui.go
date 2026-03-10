@@ -154,7 +154,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <body>
 <div id="refresh-overlay"><div class="refresh-box">⟳ Refreshing…</div></div>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor - 0.5% Pool Fee<BR>Stats content refreshes every 30 seconds</h5>
+<h5>By Foztor - 0.5% Pool Fee<BR><span id="reload-countdown">Data reload in 30 seconds</span></h5>
 <div class="back"><a href="/">← Change Wallet</a></div>
 <h2><span class="addr">Stats for: {{.Address}}</span> <span id="copyIcon" onclick="copyToClipboard('{{.Address}}')" style="cursor: pointer; margin-left: 5px;" title="Copy to clipboard">⧉</span></h2>
 <div id="ping" style="position: fixed; top: 10px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px;">Ping: -- ms</div>
@@ -464,12 +464,52 @@ function _applyStats(data) {
   }
 }
 
+var _refreshIntervalMs = 30000;       // 30 seconds
+var _countdownSeconds = _refreshIntervalMs / 1000;
+var _countdownTimer = null;
+
+function _updateCountdownLabel() {
+  var el = document.getElementById('reload-countdown');
+  if (!el) return;
+  var s = _countdownSeconds;
+  el.textContent = 'Data reload in ' + s + ' second' + (s === 1 ? '' : 's');
+}
+
+function _startCountdown() {
+  // Reset to full interval
+  _countdownSeconds = _refreshIntervalMs / 1000;
+  _updateCountdownLabel();
+
+  // Clear any previous timer
+  if (_countdownTimer !== null) {
+    clearInterval(_countdownTimer);
+  }
+
+  // Tick every second
+  _countdownTimer = setInterval(function() {
+    _countdownSeconds -= 1;
+    if (_countdownSeconds <= 0) {
+      _countdownSeconds = 0;
+      _updateCountdownLabel();
+      clearInterval(_countdownTimer);
+      _countdownTimer = null;
+      return;
+    }
+    _updateCountdownLabel();
+  }, 1000);
+}
+
+
 function _refreshStats() {
   _showOverlay();
+  var start = Date.now();
+  var MIN_VISIBLE_MS = 1500;
+
   var p1 = fetch('/api/stats?address=' + encodeURIComponent(_addr))
     .then(function(r) { return r.json(); })
     .then(function(data) { _applyStats(data); })
     .catch(function(err) { console.error('stats refresh error', err); });
+
   // Reset block history to page 1
   var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) + '&limit=' + _pageSize + '&offset=0')
     .then(function(r) { return r.json(); })
@@ -480,12 +520,45 @@ function _refreshStats() {
       updatePagination();
     })
     .catch(function(err) { console.error('blocks refresh error', err); });
+
+  function finish() {
+    _hideOverlay();
+    _startCountdown();  // always restart countdown after each refresh
+  }
+
   Promise.all([p1, p2])
-    .then(_hideOverlay)
-    .catch(_hideOverlay);
+    .then(function() {
+      var elapsed = Date.now() - start;
+      var remaining = MIN_VISIBLE_MS - elapsed;
+      if (remaining > 0) {
+        setTimeout(finish, remaining);
+      } else {
+        finish();
+      }
+    })
+    .catch(function() {
+      // Even on error, respect the minimum display time
+      var elapsed = Date.now() - start;
+      var remaining = MIN_VISIBLE_MS - elapsed;
+      if (remaining > 0) {
+        setTimeout(finish, remaining);
+      } else {
+        finish();
+      }
+    });
 }
 
-setInterval(_refreshStats, 30000);
+// Kick off first refresh shortly after page load
+setTimeout(function() {
+  _refreshStats();
+}, 0);
+
+// Also schedule automatic refreshes every 30s
+setInterval(_refreshStats, _refreshIntervalMs);
+
+// Start the initial countdown immediately on page load
+_startCountdown();
+
 </script>
 </body>
 </html>`))

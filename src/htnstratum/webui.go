@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"log"
+	// "log"
 
 	"go.uber.org/zap"
 )
@@ -136,7 +136,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   tr:hover td{background:#16213e}
   .badge-pending{color:#ffcc00}
   .badge-orphaned{color:#ff6b6b}
-  .addr{word-break:break-all;font-size:13px;color:#aaa;margin-bottom:12px}
+  .addr{word-break:break-all;font-size:15px;color:#aaa;margin-bottom:12px}
   .back{margin-bottom:16px}
   .copy-btn{background:none;border:none;color:#00d4ff;cursor:pointer;padding:0 4px;font-size:12px;vertical-align:middle;margin:0}
   .copy-btn:hover{color:#fff}
@@ -154,10 +154,11 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <h1>HTN Solo Mining Pool</h1>
 <h5>By Foztor - 0.5% Pool Fee<BR>Page automatically reloads every 30 seconds</h5>
 <div class="back"><a href="/">← Change Wallet</a></div>
-<h2>Stats for</h2>
-<div class="addr">{{.Address}}</div>
-
+<h2><span class="addr">Stats for: {{.Address}}</span> <span id="copyIcon" onclick="copyToClipboard('{{.Address}}')" style="cursor: pointer; margin-left: 5px;" title="Copy to clipboard">⧉</span></h2>
 <div id="ping" style="position: fixed; top: 10px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px;">Ping: -- ms</div>
+<div id="nethash" style="position: fixed; top: 40px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px; font-size: 16px;">
+  Net Hash: {{if ge .NetHash 1000.0}}{{printf "%.2f GH/s" (div .NetHash 1000.0)}}{{else}}{{printf "%.2f MH/s" .NetHash}}{{end}}
+</div>
 <script>
 function updatePing() {
     const start = Date.now();
@@ -170,6 +171,16 @@ function updatePing() {
 }
 setInterval(updatePing, 15000);
 updatePing();
+
+function copyToClipboard() {
+    navigator.clipboard.writeText('{{.Address}}').then(() => {
+        const icon = document.getElementById('copyIcon');
+        icon.textContent = '✓';
+        setTimeout(() => icon.textContent = '⧉', 2000);
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+    });
+}
 </script>
 
 <div class="summary">
@@ -182,11 +193,10 @@ updatePing();
     <div class="value">{{fmtAtoms .TotalAtoms}}</div>
   </div>
   <div class="card">
-  <div class="label">Current Workers / Network Hashrate</div>
-  <div class="value">{{.Workers}} / {{if ge .NetHash 1000.0}}{{printf "%.2f GH/s" (div .NetHash 1000.0)}}{{else}}{{printf "%.2f MH/s" .NetHash}}{{end}}</div>
+    <div class="label">Current Workers</div>
+    <div class="value">{{.Workers}}</div>
+  </div>
 </div>
-</div>
-
 {{if .LiveWorkers}}
 <h3>Current Workers</h3>
 <table>

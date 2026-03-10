@@ -144,6 +144,7 @@ func ListenAndServe(cfg BridgeConfig) error {
             		continue
         		}
         		go shareHandler.fetchAndUpdateReward(blockHash)
+			time.Sleep(2*time.Second)
     		}
 		}
 	}

@@ -502,9 +502,9 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	var reward uint64 = 0
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 {
+		// if attempt > 0 {
 			time.Sleep(retryDelay)
-		}
+		// }
 
 		// 1. Check if our block is in the DAG and if it's Blue
 		br, err := sh.hoosat.GetBlock(blockHash, true)
@@ -531,14 +531,14 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		}
 
 		// If AddedChainBlocks is empty, no block has been mined on top of ours yet
-		if len(chainInfo.AddedChainBlocks) == 0 {
+                if len(chainInfo.AddedChainBlockHashes) == 0 {
 			log.Printf("Block %s is blue, but no successor block exists yet. Retrying...", blockHash)
 			continue
 		}
 
 		// 3. The first block in AddedChainBlocks is the one that "accepted" ours
 		// and contains the coinbase payment for our block.
-		acceptingBlockHash := chainInfo.AddedChainBlocks[0].Hash
+		acceptingBlockHash := chainInfo.AddedChainBlockHashes[0]
 		acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
 		if err != nil || acceptingBlock == nil || len(acceptingBlock.Block.Transactions) == 0 {
 			continue

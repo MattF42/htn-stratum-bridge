@@ -277,15 +277,37 @@ var _offset = 0;
 
 function changePage(dir) {
   var newOffset = _offset + dir * _pageSize;
+
+  // If we're already on the first page and asked to go back, do nothing.
+  if (newOffset <= 0 && dir < 0) {
+    newOffset = 0;
+    if (_offset === 0) {
+      return; // already on page 1, don't refetch
+    }
+  }
+
   if (newOffset < 0) newOffset = 0;
   if (newOffset >= _total) return;
+
   fetchPage(newOffset);
 }
 
 function fetchPage(offset) {
-  var url = '/api/blocks?address=' + encodeURIComponent(_addr) + '&limit=' + _pageSize + '&offset=' + offset;
+  var url = '/api/blocks?address=' + encodeURIComponent(_addr) +
+            '&limit=' + _pageSize + '&offset=' + offset;
   fetch(url)
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      var ct = r.headers.get('Content-Type') || '';
+      if (!ct.includes('application/json')) {
+        return r.text().then(function(text) {
+          console.error('pagination fetch error: non-JSON response from', url,
+                        'content-type=', ct,
+                        'body prefix=', text.slice(0, 120));
+          throw new Error('Non-JSON response');
+        });
+      }
+      return r.json();
+    })
     .then(function(data) {
       _offset = offset;
       _total = data.total;
@@ -511,8 +533,20 @@ function _refreshStats() {
     .catch(function(err) { console.error('stats refresh error', err); });
 
   // Reset block history to page 1
-  var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) + '&limit=' + _pageSize + '&offset=0')
-    .then(function(r) { return r.json(); })
+  var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) +
+                 '&limit=' + _pageSize + '&offset=0')
+    .then(function(r) {
+      var ct = r.headers.get('Content-Type') || '';
+      if (!ct.includes('application/json')) {
+        return r.text().then(function(text) {
+          console.error('blocks refresh error: non-JSON response from /api/blocks',
+                        'content-type=', ct,
+                        'body prefix=', text.slice(0, 120));
+          throw new Error('Non-JSON response');
+        });
+      }
+      return r.json();
+    })
     .then(function(data) {
       _offset = 0;
       _total = data.total;
@@ -521,9 +555,10 @@ function _refreshStats() {
     })
     .catch(function(err) { console.error('blocks refresh error', err); });
 
+  // Common completion logic: hide overlay + restart countdown
   function finish() {
     _hideOverlay();
-    _startCountdown();  // always restart countdown after each refresh
+    _startCountdown();
   }
 
   Promise.all([p1, p2])

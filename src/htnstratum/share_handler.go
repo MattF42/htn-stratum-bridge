@@ -494,7 +494,7 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // exit once the reward is found or all retries are exhausted.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
-		maxAttempts = 20
+		maxAttempts = 30
 		retryDelay  = 30 * time.Second
 		initialRetryDelay  = 60 * time.Second
 	)

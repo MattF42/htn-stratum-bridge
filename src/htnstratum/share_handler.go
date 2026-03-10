@@ -492,72 +492,89 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // intended to run in a background goroutine and retries a few times to
 // handle propagation latency.  The goroutine is fire-and-forget and will
 // exit once the reward is found or all retries are exhausted.
-
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
-		maxAttempts = 15
-		retryDelay  = 45 * time.Second
+		maxAttempts = 20
+		retryDelay  = 30 * time.Second
 	)
 
 	var status string = "red"
 	var reward uint64 = 0
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 { time.Sleep(retryDelay) }
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
 
-		// 1. Get our mined block to see if it's Blue yet
+		// 1. Check if our block is in the DAG and if it's Blue
 		br, err := sh.hoosat.GetBlock(blockHash, true)
-		if err != nil || br == nil || br.Block == nil { continue }
-
-		if !br.Block.VerboseData.IsChainBlock {
-			log.Printf("[%d] Block %s is RED/Pending...", attempt, blockHash)
+		if err != nil || br == nil || br.Block == nil {
+			log.Printf("[Attempt %d] Block %s not found yet", attempt, blockHash)
 			continue
 		}
-		status = "blue"
-		log.Printf("[%d] Block %s is Blue ... finding reward", attempt, blockHash)
 
-		// 2. Get DAG info to find the current Tip
-		dagInfo, err := sh.hoosat.GetBlockDAGInfo()
-		if err != nil || len(dagInfo.TipHashes) == 0 { continue }
-		
-		// Start walking back from the first Tip
-		currentHash := dagInfo.TipHashes[0] 
-		found := false
-
-		// Walk back up to 20 blocks to find the "Accepting" block
-		for i := 0; i < 20; i++ {
-			currBlock, err := sh.hoosat.GetBlock(currentHash, true)
-			if err != nil || currBlock == nil || currBlock.Block == nil { break }
-
-			// Check if this block's selected parent is OUR block
-			if currBlock.Block.VerboseData.SelectedParentHash == blockHash {
-				// FOUND IT! This block's coinbase pays for our blockHash
-				if len(currBlock.Block.Transactions) > 0 {
-					cb := currBlock.Block.Transactions[0]
-					// Index 0 in coinbase is always the reward for the Selected Parent
-					if len(cb.Outputs) > 0 {
-						reward = cb.Outputs[0].Amount
-						log.Printf("Verified: %s paid %d to %s", currentHash, reward, blockHash)
-						found = true
-						break
-					}
-				}
-			}
-
-			// Move to the next parent in the chain
-			currentHash = currBlock.Block.VerboseData.SelectedParentHash
-			if currentHash == "" { break }
+		// If it's definitely Red, we can stop and mark it
+		if !br.Block.VerboseData.IsChainBlock {
+			log.Printf("[Attempt %d] Block %s is currently RED", attempt, blockHash)
+			// We continue retrying in case it "flips" to blue via a reorg
+			continue
 		}
 
-		if found { break }
+		status = "blue"
+		log.Printf("[Attempt %d] Block %s is BLUE. Finding successor...", attempt, blockHash)
+
+		// 2. Use your new RPC method to find the next block in the selected chain
+		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
+		if err != nil {
+			log.Printf("Error fetching chain from %s: %v", blockHash, err)
+			continue
+		}
+
+		// If AddedChainBlocks is empty, no block has been mined on top of ours yet
+		if len(chainInfo.AddedChainBlocks) == 0 {
+			log.Printf("Block %s is blue, but no successor block exists yet. Retrying...", blockHash)
+			continue
+		}
+
+		// 3. The first block in AddedChainBlocks is the one that "accepted" ours
+		// and contains the coinbase payment for our block.
+		acceptingBlockHash := chainInfo.AddedChainBlocks[0].Hash
+		acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
+		if err != nil || acceptingBlock == nil || len(acceptingBlock.Block.Transactions) == 0 {
+			continue
+		}
+
+		// 4. Extract reward from the accepting block's coinbase
+		// The coinbase is always the first transaction [0]
+		coinbase := acceptingBlock.Block.Transactions[0]
+
+		// Important: A block can merge multiple blue blocks. 
+		// We must find the index of OUR blockHash in the MergeSetBlues list.
+		rewardIndex := -1
+		for i, blueHash := range acceptingBlock.Block.VerboseData.MergeSetBluesHashes {
+			if blueHash == blockHash {
+				rewardIndex = i
+				break
+			}
+		}
+
+		if rewardIndex != -1 && len(coinbase.Outputs) > rewardIndex {
+			reward = coinbase.Outputs[rewardIndex].Amount
+			log.Printf("SUCCESS: Block %s rewarded in %s (index %d): %d atoms",
+				blockHash, acceptingBlockHash, rewardIndex, reward)
+			break // We found it, exit the retry loop
+		}
+
+		log.Printf("Block %s found in chain, but reward index not matched. Retrying...", blockHash)
 	}
 
-	// Final Update to Database
-        log.Printf("Writing DB entry: %s status %s reward  %d ", blockHash, status, reward)
+	// 5. Final Database Update
+	log.Printf("Finalizing %s: Status=%s, Reward=%d", blockHash, status, reward)
 	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
-		log.Printf("DB Error for %s: %v", blockHash, err)
+		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}
 }
+
 
 
 

@@ -515,24 +515,24 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 
 		// If it's definitely Red, we can stop and mark it
 		if !br.Block.VerboseData.IsChainBlock {
-			log.Printf("[Attempt %d] Block %s is currently RED", attempt, blockHash)
+			// log.Printf("[Attempt %d] Block %s is currently RED", attempt, blockHash)
 			// We continue retrying in case it "flips" to blue via a reorg
 			continue
 		}
 
 		status = "blue"
-		log.Printf("[Attempt %d] Block %s is BLUE. Finding successor...", attempt, blockHash)
+		// log.Printf("[Attempt %d] Block %s is BLUE. Finding successor...", attempt, blockHash)
 
 		// 2. Use your new RPC method to find the next block in the selected chain
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
 		if err != nil {
-			log.Printf("Error fetching chain from %s: %v", blockHash, err)
+			log.Printf("Error fetching VSP chain from %s: %v", blockHash, err)
 			continue
 		}
 
 		// If AddedChainBlocks is empty, no block has been mined on top of ours yet
                 if len(chainInfo.AddedChainBlockHashes) == 0 {
-			log.Printf("Block %s is blue, but no successor block exists yet. Retrying...", blockHash)
+			// log.Printf("Block %s is blue, but no successor block exists yet. Retrying...", blockHash)
 			continue
 		}
 
@@ -560,16 +560,16 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 
 		if rewardIndex != -1 && len(coinbase.Outputs) > rewardIndex {
 			reward = coinbase.Outputs[rewardIndex].Amount
-			log.Printf("SUCCESS: Block %s rewarded in %s (index %d): %d atoms",
-				blockHash, acceptingBlockHash, rewardIndex, reward)
+			// log.Printf("SUCCESS: Block %s rewarded in %s (index %d): %d atoms",
+				// blockHash, acceptingBlockHash, rewardIndex, reward)
 			break // We found it, exit the retry loop
 		}
 
-		log.Printf("Block %s found in chain, but reward index not matched. Retrying...", blockHash)
+		// log.Printf("Block %s found in chain, but reward index not matched. Retrying...", blockHash)
 	}
 
 	// 5. Final Database Update
-	log.Printf("Finalizing %s: Status=%s, Reward=%d", blockHash, status, reward)
+	// log.Printf("Finalizing %s: Status=%s, Reward=%d", blockHash, status, reward)
 	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
 		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}

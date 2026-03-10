@@ -511,6 +511,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
             continue
         }
         var reward uint64
+        status = "red" // Default
         if br.Block.VerboseData.IsChainBlock {
             // log.Printf("Block %s: is BLUE :)", blockHash)
             status = "blue"
@@ -528,13 +529,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
                 }
             }
             reward = sh.cachedReward
-        } else {
-            // log.Printf("Block %s: is RED :(", blockHash)
-            status = "red"
-	    // Bit pre-mature to do anything here - simply record status, but do not update DB yet
-            // if err := sh.miningDB.UpdateReward(blockHash, 0, status); err != nil {
-                // log.Printf("failed to update block %s: %v", blockHash, err)
-            // }
         }
         if reward == 0 {
             continue

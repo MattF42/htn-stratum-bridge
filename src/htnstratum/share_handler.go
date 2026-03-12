@@ -538,6 +538,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	var status string = "red"
 	var reward uint64 = 0
 
+	// Initial Delay to allow DAG to settle and re-org and avoid false positives
 	time.Sleep(initialRetryDelay)
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -545,73 +546,92 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			time.Sleep(retryDelay)
 		}
 
+		// 1. Check if our block is in the DAG
 		br, err := sh.hoosat.GetBlock(blockHash, true)
 		if err != nil || br == nil || br.Block == nil {
+			if attempt >= minAttemptsBeforeLogging {
+				log.Printf("[Attempt %d] Block %s not found yet", attempt, blockHash)
+			}
 			continue
 		}
 
-		// Only Chain Blocks have finalized coinbase rewards
+		// In GHOSTDAG, only blocks in the Selected Parent Chain (Chain Blocks)
+		// are guaranteed to have their rewards finalized in the coinbase.
 		if !br.Block.VerboseData.IsChainBlock {
 			status = "red"
 			continue
 		}
 
-		// Find the block that accepted/merged ours
+		// 2. Find the "Accepting Block" (the one that pays us)
+		// We walk the chain to find the NEXT block where the payment actually appears.
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
-		if err != nil || len(chainInfo.AddedChainBlockHashes) == 0 {
+		if err != nil {
+			log.Printf("Error fetching VSP chain from %s: %v", blockHash, err)
 			continue
 		}
 
+		// If AddedChainBlocks is empty, no block has been mined on top of ours yet.
+		if len(chainInfo.AddedChainBlockHashes) == 0 {
+			continue
+		}
+
+		// 3. Extract the physical reward from the coinbase of the successor.
 		acceptingBlockHash := chainInfo.AddedChainBlockHashes[0]
 		acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
 		if err != nil || acceptingBlock == nil || len(acceptingBlock.Block.Transactions) == 0 {
 			continue
 		}
 
+		// Fetch the original record to get the wallet address.
 		origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
 		if dbErr != nil || origRecord == nil {
+			log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
 			continue
 		}
 
-		// TOTAL PHYSICAL PAYOUT: Sum of all outputs to this wallet in the coinbase
+		// 4. Physical Truth: Get the total amount paid to this address in the coinbase.
 		ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
 		if !ok || totalAmount == 0 {
+			if attempt >= minAttemptsBeforeLogging {
+				log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			}
 			continue
 		}
 
-		// DETERMINISTIC ATTRIBUTION:
-		// We find all blocks in this merge set that belong to our bridge (via DB check).
+		// 5. Shared Wallet Attribution:
+		// Identify how many blocks we (this bridge) mined in this merge set for this address.
 		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes, origRecord.WalletAddress, sh.miningDB)
 		
 		count := uint64(len(minedInThisMergeSet))
-		
-		// If we only find ONE block (the normal case), reward = totalAmount. 
-		// This fixes your 6.33 HTN bug because 12.66 / 1 = 12.66.
-		if count > 0 {
+
+		// THE ROBUST FIX:
+		// If we only mined ONE block in this set (the standard case), we take the ENTIRE payout.
+		// If we mined multiple (Parallel Blocks), we distribute the total amount fairly.
+		if count <= 1 {
+			reward = totalAmount
+		} else {
+			// SHARED WALLET CASE: Distribute the total coinbase amount across all blocks.
 			portion := totalAmount / count
 			remainder := totalAmount % count
 			
 			reward = portion
-			// Give the 1-atom remainder to the first block in the set
+			// Assign the 1-atom remainder to the first block in the merge-set order.
 			if minedInThisMergeSet[0].Hash == blockHash {
 				reward += remainder
 			}
-			
-			log.Printf("[DEBUG] Block %s: Attributed %d atoms (Total %d shared by %d blocks)", 
-				blockHash, reward, totalAmount, count)
-		} else {
-			// Fallback: If for some reason the DB check fails, we trust the physical sum
-			reward = totalAmount
 		}
 
 		status = "blue"
 		break 
 	}
 
-	if reward > 0 {
-		if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
-			log.Printf("failed to update block %s in DB: %v", blockHash, err)
-		}
+	if reward == 0 {
+		status = "red"
+	}
+
+	// 6. Final Database Update
+	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
+		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}
 }
 

@@ -73,6 +73,15 @@ var bans = []BanInfo{}
 
 const bps = 5
 
+func deriveAddressFromScript(scriptHex string) string {
+	// Standard Hoosat P2PK script: 20 <32-byte-pubkey> ac (Total 34 bytes / 68 hex chars)
+	if len(scriptHex) == 68 && strings.HasPrefix(scriptHex, "20") && strings.HasSuffix(scriptHex, "ac") {
+		// Extract the 32-byte pubkey hex
+		return scriptHex[2:66]
+	}
+	return ""
+}
+
 func AddressBanned(address string) bool {
 	for _, ban := range bans {
 		if ban.Address == address {
@@ -436,39 +445,41 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	blockHash := consensushashing.BlockHash(converted).String()
 	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), blockHash)
 
-	// Persist the found block to the mining database.
+        	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
-		// Default to current context address, but we will try to refine it.
+		// Default to the Stratum login address
 		walletAddr := ctx.WalletAddr
 
-		// ROBUST PEEK: The block template from the node includes VerboseData for the coinbase.
-		// We pick the address receiving the largest amount. This ensures the DB record
-		// matches physical reality even if the miner switched addresses or it's a fee job.
+		// ROBUST EXTRACTION: Look inside the actual block being submitted.
+		// The coinbase (Transactions[0]) contains the physical payment script.
 		if submitInfo.block != nil && len(submitInfo.block.Transactions) > 0 {
 			cb := submitInfo.block.Transactions[0]
 			var maxAmount uint64
-			var primaryAddr string
+			var targetScript string
 
 			for _, out := range cb.Outputs {
-				// The node populates ScriptPublicKeyAddress in VerboseData for templates
-				if out.VerboseData != nil && out.VerboseData.ScriptPublicKeyAddress != "" {
-					if out.Amount > maxAmount {
-						maxAmount = out.Amount
-						primaryAddr = out.VerboseData.ScriptPublicKeyAddress
+				if out.Amount > maxAmount {
+					maxAmount = out.Amount
+					if out.ScriptPublicKey != nil {
+						// Use .Script field for the Hoosat appmessage package
+						targetScript = out.ScriptPublicKey.Script
 					}
 				}
 			}
 
-			if primaryAddr != "" {
-				if primaryAddr != walletAddr {
-					log.Printf("[DEBUG] Block %s: Address mismatch! Stratum: %s, Actual Block: %s. Using Block address.", 
-						blockHash, walletAddr, primaryAddr)
+			if targetScript != "" {
+				derived := deriveAddressFromScript(targetScript)
+				if derived != "" {
+					// Compare against the Stratum address (stripped of HRP for safety)
+					cleanWallet := strings.ToLower(stripHRPRewards(walletAddr))
+					if derived != cleanWallet {
+						log.Printf("[DEBUG] Block %s: Diverted reward detected! Stratum: %s, Block Pubkey: %s", 
+							blockHash, walletAddr, derived)
+						// Use the derived pubkey hex. The reward checker's 
+						// stripHRPRewards will handle this string correctly.
+						walletAddr = derived
+					}
 				}
-				walletAddr = primaryAddr
-			} else {
-				// If we get here, VerboseData was missing or empty.
-				// This shouldn't happen with a standard Hoosat node template.
-				log.Printf("[WARN] Block %s: Could not determine primary recipient from template VerboseData.", blockHash)
 			}
 		}
 
@@ -477,7 +488,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			BlockHash:     blockHash,
 			WalletAddress: walletAddr,
 			WorkerName:    ctx.WorkerName,
-			RewardAtoms:   0, // updated asynchronously once the node confirms the block
+			RewardAtoms:   0,
 			Status:        "pending",
 		}
 

@@ -278,25 +278,27 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		}
 	}
 
-	// Build extraData string
+       // Build extraData string: CONSISTENT & CACHE-FRIENDLY
 	var extraData string
 	if htnApi.gbtCacheTTL > 0 {
-	   if poll != 0 && vote != 0 {
-		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`, 
-			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
-	   } else {
-		        // We must keep extraData the same to have effective caching
-			extraData = fmt.Sprintf(`Mined via htn-stratum-bridge version %s`, version)
-	  }
+		if poll != 0 && vote != 0 {
+			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge_%s as worker %s poll %d vote %d`,
+				payoutAddress, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+		} else {
+			// Effective caching: This string is identical for everyone sharing this address's cache
+			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge version %s`,
+				payoutAddress, version)
+		}
 	} else { // Pre GBT cache behaviour
-	   if poll != 0 && vote != 0 {
-		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`, 
-			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
-	   } else {
-		 extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, 
-			 client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
-	  }
-        }
+		if poll != 0 && vote != 0 {
+			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge_%s as worker %s poll %d vote %d`,
+				payoutAddress, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+		} else {
+			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge_%s as worker %s`,
+				payoutAddress, version, sanitizeWorkerID(client.WorkerName))
+		}
+	} 
+
 
 
 	// Request block template with selected payout address, using per-address
@@ -306,7 +308,8 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 	// reads/writes are protected by the mutex.
         // CRITICAL: We only use the cache for normal miner jobs (isFeeJob == false).
 	// This prevents any race conditions or mixups between miner rewards and bridge taxes.
-	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 && !isFeeJob {
+	// TRACE 1: Before Cache Check
+	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
 		htnApi.gbtCacheMu.Lock()
 		entry, ok := htnApi.gbtCache[payoutAddress]
 		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {

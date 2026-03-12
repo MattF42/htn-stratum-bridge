@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/hex"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
@@ -447,19 +448,32 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
-		isFeeJob := submitInfo.state.IsFeeJob(submitInfo.block)
+		walletAddr := ctx.WalletAddr // Default to the miner who submitted the share
 
-		// Use the bridge fee address for tax blocks, otherwise the miner's login address.
-		walletAddr := ctx.WalletAddr
-		if isFeeJob && sh.htnApi != nil && sh.htnApi.bridgeFee.Address != "" {
-			walletAddr = sh.htnApi.bridgeFee.Address
+		// PHYSICAL TRUTH: Identify the owner from the Hex-Encoded Coinbase Payload.
+		// This is the only way to accurately track rewards in Hoosat/Kaspa GHOSTDAG.
+		if len(submitInfo.block.Transactions) > 0 {
+			cb := submitInfo.block.Transactions[0]
+
+			// The node returns the coinbase payload as a hex-encoded string.
+			payloadBytes, err := hex.DecodeString(string(cb.Payload))
+			if err == nil {
+				payloadStr := string(payloadBytes)
+
+				// Search for the 'hoosat:' prefix within the decoded payload.
+				if idx := strings.Index(payloadStr, "hoosat:"); idx != -1 {
+					// Extract the address starting from the prefix.
+					potentialAddr := payloadStr[idx:]
+					parts := strings.Fields(potentialAddr)
+					if len(parts) > 0 {
+						// Clean up any trailing characters like quotes or commas.
+						walletAddr = strings.Trim(parts[0], "'\",. ")
+					}
+				}
+			}
 		}
 
-		log.Printf("[DEBUG] Block Found: %s", blockHash)
-		log.Printf("[DEBUG] Miner Login: %s", ctx.WalletAddr)
-		log.Printf("[DEBUG] Is Fee Job: %v", isFeeJob)
-		log.Printf("[DEBUG] WalletAddr for DB: %s", walletAddr)
-
+		// Record the block to the database using the physically identified wallet.
 		record := BlockRecord{
 			Timestamp:     time.Now().UnixMilli(),
 			BlockHash:     blockHash,
@@ -469,14 +483,12 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			Status:        "pending",
 		}
 
-
 		if err := sh.miningDB.RecordBlock(record); err != nil {
 			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
 		} else {
 			go sh.fetchAndUpdateReward(blockHash)
 		}
 	}
-
 	ctx.ReplySuccess(event.Id)
 	return nil
 }

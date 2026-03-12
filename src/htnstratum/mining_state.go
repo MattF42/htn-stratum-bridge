@@ -53,8 +53,11 @@ func (ms *MiningState) AddJob(job *appmessage.RPCBlock, isFeeJob bool) int {
 		if isFeeJob {
 			ms.FeeJobs[hash] = true
 		} else {
-			delete(ms.FeeJobs, hash)
+			if _, alreadyFee := ms.FeeJobs[hash]; !alreadyFee {
+                                delete(ms.FeeJobs, hash)
+                        }
 		}
+
 	}
 	
 	ms.JobLock.Unlock()

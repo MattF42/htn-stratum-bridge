@@ -304,45 +304,41 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 	// On a cache miss the lock is released before the RPC call so concurrent
 	// requests for different payout addresses proceed in parallel; only map
 	// reads/writes are protected by the mutex.
-	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
+        // CRITICAL: We only use the cache for normal miner jobs (isFeeJob == false).
+	// This prevents any race conditions or mixups between miner rewards and bridge taxes.
+	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 && !isFeeJob {
 		htnApi.gbtCacheMu.Lock()
 		entry, ok := htnApi.gbtCache[payoutAddress]
 		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
 			cached := entry.template
-			cachedIsFee := entry.isFeeJob
 			htnApi.gbtCacheMu.Unlock()
-                       	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
-		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
-		        total := hits + misses
-		        if total%1000 == 0 {
-			        rate := (float64(hits) / float64(total)) * 100.0
-			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
-		        }
-			return cached, cachedIsFee, nil // Make sure feejob not accidentally cached!!
+			atomic.AddUint64(&htnApi.gbtCacheHits, 1)
+			return cached, false, nil // Always false because we only cache non-fee jobs
 		}
 		htnApi.gbtCacheMu.Unlock()
-                atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
+		atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
 
-		// Cache miss or expired – fetch outside the lock.
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 		if err != nil {
 			return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
+		
 		htnApi.gbtCacheMu.Lock()
-		// Store the pair together
 		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{
 			template:  template,
-			isFeeJob:  isFeeJob,
+			isFeeJob:  false, // Only normal jobs enter the cache
 			fetchedAt: time.Now(),
 		}
 		htnApi.gbtCacheMu.Unlock()
-		return template, isFeeJob, nil
+		return template, false, nil
 	}
 
+	// For Fee Jobs (or when cache is disabled), always fetch fresh from the node.
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
+		return nil, false, errors.Wrap(err, "failed fetching fresh block template from hoosat")
 	}
 
 	return template, isFeeJob, nil
+
 }

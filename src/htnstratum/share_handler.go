@@ -438,20 +438,32 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
-		// Use the bridge fee address for fee jobs so the DB record matches the
-		// actual on-chain coinbase payout address instead of the miner's address.
 		walletAddr := ctx.WalletAddr
-		if state.IsFeeJob(int(submitInfo.jobId)) {
+
+		// FAIL-SAFE: Peek at the actual coinbase outputs in the block we are about to submit.
+		// If the bridge fee address is in there, we use it. This ensures the DB
+		// always matches the physical block, even if IsFeeJob flag is out of sync.
+		if len(submitInfo.block.Transactions) > 0 {
+			// coinbaseSumToAddress returns true if the address is found in any coinbase output
+			if ok, _ := coinbaseSumToAddress(submitInfo.block, sh.htnApi.bridgeFee.Address); ok {
+				walletAddr = sh.htnApi.bridgeFee.Address
+			}
+		}
+
+		// Fallback to original flag logic if not already set to bridge address
+		if walletAddr == ctx.WalletAddr && state.IsFeeJob(int(submitInfo.jobId)) {
 			walletAddr = sh.htnApi.bridgeFee.Address
 		}
+
 		record := BlockRecord{
 			Timestamp:     time.Now().UnixMilli(),
 			BlockHash:     blockHash,
 			WalletAddress: walletAddr,
 			WorkerName:    ctx.WorkerName,
 			RewardAtoms:   0, // updated asynchronously once the node confirms the block
-			Status: 	"pending",
+			Status:        "pending",
 		}
+
 		// log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
 		if err := sh.miningDB.RecordBlock(record); err != nil {
 			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
@@ -502,9 +514,9 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // exit once the reward is found or all retries are exhausted.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
-		maxAttempts              = 30
-		retryDelay               = 30 * time.Second
-		initialRetryDelay        = 180 * time.Second
+		maxAttempts              = 15
+		retryDelay               = 60 * time.Second
+		initialRetryDelay        = 30 * time.Second
 		minAttemptsBeforeLogging = 3
 	)
 

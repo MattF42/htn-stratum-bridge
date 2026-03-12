@@ -440,19 +440,28 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	if sh.miningDB != nil {
 		walletAddr := ctx.WalletAddr
 
-		// FAIL-SAFE: Peek at the actual coinbase outputs in the block we are about to submit.
-		// If the bridge fee address is in there, we use it. This ensures the DB
-		// always matches the physical block, even if IsFeeJob flag is out of sync.
-		if len(submitInfo.block.Transactions) > 0 {
-			// coinbaseSumToAddress returns true if the address is found in any coinbase output
-			if ok, _ := coinbaseSumToAddress(submitInfo.block, sh.htnApi.bridgeFee.Address); ok {
-				walletAddr = sh.htnApi.bridgeFee.Address
+		// ROBUST PEEK: Determine the primary recipient of this block.
+		// We look at the actual coinbase outputs and pick the address receiving the largest amount.
+		// This ensures the DB record matches physical reality, solving accounting mismatches
+		// caused by dev fees or bridge fee interceptions.
+		if len(submitInfo.block.Transactions) > 0 && len(submitInfo.block.Transactions[0].Outputs) > 0 {
+			var maxAmount uint64
+			var primaryAddr string
+			
+			// Transactions[0] is always the coinbase transaction
+			for _, out := range submitInfo.block.Transactions[0].Outputs {
+				// Use the address already parsed by the node in VerboseData
+				if out.VerboseData != nil && out.VerboseData.ScriptPublicKeyAddress != "" {
+					if out.Amount > maxAmount {
+						maxAmount = out.Amount
+						primaryAddr = out.VerboseData.ScriptPublicKeyAddress
+					}
+				}
 			}
-		}
-
-		// Fallback to original flag logic if not already set to bridge address
-		if walletAddr == ctx.WalletAddr && state.IsFeeJob(int(submitInfo.jobId)) {
-			walletAddr = sh.htnApi.bridgeFee.Address
+			
+			if primaryAddr != "" {
+				walletAddr = primaryAddr
+			}
 		}
 
 		record := BlockRecord{

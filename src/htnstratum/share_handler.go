@@ -438,19 +438,19 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
+		// Default to current context address, but we will try to refine it.
 		walletAddr := ctx.WalletAddr
 
-		// ROBUST PEEK: Determine the primary recipient of this block.
-		// We look at the actual coinbase outputs and pick the address receiving the largest amount.
-		// This ensures the DB record matches physical reality, solving accounting mismatches
-		// caused by dev fees or bridge fee interceptions.
-		if len(submitInfo.block.Transactions) > 0 && len(submitInfo.block.Transactions[0].Outputs) > 0 {
+		// ROBUST PEEK: The block template from the node includes VerboseData for the coinbase.
+		// We pick the address receiving the largest amount. This ensures the DB record
+		// matches physical reality even if the miner switched addresses or it's a fee job.
+		if submitInfo.block != nil && len(submitInfo.block.Transactions) > 0 {
+			cb := submitInfo.block.Transactions[0]
 			var maxAmount uint64
 			var primaryAddr string
-			
-			// Transactions[0] is always the coinbase transaction
-			for _, out := range submitInfo.block.Transactions[0].Outputs {
-				// Use the address already parsed by the node in VerboseData
+
+			for _, out := range cb.Outputs {
+				// The node populates ScriptPublicKeyAddress in VerboseData for templates
 				if out.VerboseData != nil && out.VerboseData.ScriptPublicKeyAddress != "" {
 					if out.Amount > maxAmount {
 						maxAmount = out.Amount
@@ -458,9 +458,17 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 					}
 				}
 			}
-			
+
 			if primaryAddr != "" {
+				if primaryAddr != walletAddr {
+					log.Printf("[DEBUG] Block %s: Address mismatch! Stratum: %s, Actual Block: %s. Using Block address.", 
+						blockHash, walletAddr, primaryAddr)
+				}
 				walletAddr = primaryAddr
+			} else {
+				// If we get here, VerboseData was missing or empty.
+				// This shouldn't happen with a standard Hoosat node template.
+				log.Printf("[WARN] Block %s: Could not determine primary recipient from template VerboseData.", blockHash)
 			}
 		}
 

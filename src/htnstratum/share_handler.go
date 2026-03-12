@@ -446,26 +446,19 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), blockHash)
 
 	// Persist the found block to the mining database.
-	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
-		walletAddr := ctx.WalletAddr
-		isFeeJob := submitInfo.state.IsFeeJob(int(submitInfo.jobId))
-		
-		log.Printf("[DEBUG] Block Found: %s", blockHash)
-		log.Printf("[DEBUG] Miner Login: %s", walletAddr)
-		log.Printf("[DEBUG] Is Fee Job: %v", isFeeJob)
+		isFeeJob := submitInfo.state.IsFeeJob(submitInfo.block)
 
-		if submitInfo.block != nil && len(submitInfo.block.Transactions) > 0 {
-			cb := submitInfo.block.Transactions[0]
-			log.Printf("[DEBUG] Coinbase Payload: %s", cb.Payload)
-			
-			// Let's also see what's in the outputs of the template itself
-			for i, out := range cb.Outputs {
-				if out.VerboseData != nil {
-					log.Printf("[DEBUG] Template Output %d: %s (%d atoms)", i, out.VerboseData.ScriptPublicKeyAddress, out.Amount)
-				}
-			}
+		// Use the bridge fee address for tax blocks, otherwise the miner's login address.
+		walletAddr := ctx.WalletAddr
+		if isFeeJob && sh.htnApi != nil && sh.htnApi.bridgeFee.Address != "" {
+			walletAddr = sh.htnApi.bridgeFee.Address
 		}
+
+		log.Printf("[DEBUG] Block Found: %s", blockHash)
+		log.Printf("[DEBUG] Miner Login: %s", ctx.WalletAddr)
+		log.Printf("[DEBUG] Is Fee Job: %v", isFeeJob)
+		log.Printf("[DEBUG] WalletAddr for DB: %s", walletAddr)
 
 		record := BlockRecord{
 			Timestamp:     time.Now().UnixMilli(),

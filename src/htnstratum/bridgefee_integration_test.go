@@ -140,13 +140,13 @@ func TestStratumContext_WorkerInfo(t *testing.T) {
 func TestMiningState_AddJob_NormalJob(t *testing.T) {
 	ms := &MiningState{
 		Jobs:    make(map[int]*appmessage.RPCBlock),
-		FeeJobs: make(map[int]bool),
+		FeeJobs: make(map[*appmessage.RPCBlock]bool),
 	}
 
 	block := &appmessage.RPCBlock{}
 	jobId := ms.AddJob(block, false)
 
-	if ms.IsFeeJob(jobId) {
+	if ms.IsFeeJob(block) {
 		t.Error("normal job should not be marked as a fee job")
 	}
 	got, exists := ms.GetJob(jobId)
@@ -161,13 +161,13 @@ func TestMiningState_AddJob_NormalJob(t *testing.T) {
 func TestMiningState_AddJob_FeeJob(t *testing.T) {
 	ms := &MiningState{
 		Jobs:    make(map[int]*appmessage.RPCBlock),
-		FeeJobs: make(map[int]bool),
+		FeeJobs: make(map[*appmessage.RPCBlock]bool),
 	}
 
 	block := &appmessage.RPCBlock{}
-	jobId := ms.AddJob(block, true)
+	ms.AddJob(block, true)
 
-	if !ms.IsFeeJob(jobId) {
+	if !ms.IsFeeJob(block) {
 		t.Error("fee job should be marked as a fee job")
 	}
 }
@@ -175,14 +175,14 @@ func TestMiningState_AddJob_FeeJob(t *testing.T) {
 func TestMiningState_RemoveJob_ClearsFeeJob(t *testing.T) {
 	ms := &MiningState{
 		Jobs:    make(map[int]*appmessage.RPCBlock),
-		FeeJobs: make(map[int]bool),
+		FeeJobs: make(map[*appmessage.RPCBlock]bool),
 	}
 
 	block := &appmessage.RPCBlock{}
 	jobId := ms.AddJob(block, true)
 	ms.RemoveJob(jobId)
 
-	if ms.IsFeeJob(jobId) {
+	if ms.IsFeeJob(block) {
 		t.Error("IsFeeJob should return false after RemoveJob")
 	}
 	_, exists := ms.GetJob(jobId)
@@ -194,7 +194,7 @@ func TestMiningState_RemoveJob_ClearsFeeJob(t *testing.T) {
 func TestMiningState_ClearJobs_ClearsFeeJobs(t *testing.T) {
 	ms := &MiningState{
 		Jobs:    make(map[int]*appmessage.RPCBlock),
-		FeeJobs: make(map[int]bool),
+		FeeJobs: make(map[*appmessage.RPCBlock]bool),
 	}
 
 	ms.AddJob(&appmessage.RPCBlock{}, true)
@@ -215,17 +215,28 @@ func TestMiningState_OverwriteWithNormalAfterFee(t *testing.T) {
 	// cleared when a normal job occupies the same slot.
 	ms := &MiningState{
 		Jobs:    make(map[int]*appmessage.RPCBlock),
-		FeeJobs: make(map[int]bool),
+		FeeJobs: make(map[*appmessage.RPCBlock]bool),
 	}
 
 	// Fill maxjobs slots with fee jobs so the next AddJob wraps around.
+	var firstFeeBlock *appmessage.RPCBlock
 	for i := 0; i < maxjobs; i++ {
-		ms.AddJob(&appmessage.RPCBlock{}, true)
+		b := &appmessage.RPCBlock{}
+		if i == 0 {
+			firstFeeBlock = b
+		}
+		ms.AddJob(b, true)
 	}
 
 	// The next job wraps to slot 0 (counter % maxjobs == 0) and is NOT a fee job.
-	jobId := ms.AddJob(&appmessage.RPCBlock{}, false)
-	if ms.IsFeeJob(jobId) {
+	// This should evict the old block (firstFeeBlock) from FeeJobs.
+	newBlock := &appmessage.RPCBlock{}
+	ms.AddJob(newBlock, false)
+
+	if ms.IsFeeJob(newBlock) {
 		t.Error("slot reused by a normal job should not report IsFeeJob == true")
+	}
+	if ms.IsFeeJob(firstFeeBlock) {
+		t.Error("evicted fee-job block should no longer report IsFeeJob == true")
 	}
 }

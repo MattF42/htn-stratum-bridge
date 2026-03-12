@@ -153,10 +153,10 @@ func processPayingBlock(api *HtnApi, br *appmessage.GetBlockResponseMessage, add
 		return nil, nil
 	}
 
-	// Identify our mined blue blocks by presence of worker tag in payload
-	mined := findMinedBluesFromMergeSet(api, br.Block.VerboseData.MergeSetBluesHashes)
+	// Identify our mined blue blocks by wallet address in their coinbase outputs.
+	mined := findMinedBluesFromMergeSet(api, br.Block.VerboseData.MergeSetBluesHashes, addr)
 	if len(mined) == 0 {
-		// No mergeset blue has a worker tag; can't attribute robustly -> skip silently
+		// No mergeset blue pays to our wallet; this paying block is not attributable -> skip silently
 		return nil, nil
 	}
 
@@ -216,9 +216,11 @@ type minedBlue struct {
 	Worker string
 }
 
-// findMinedBluesFromMergeSet fetches each mergeset-blue and returns those that have a worker tag in payload.
-// We DO NOT require the blue's coinbase to pay our address (Hoosat pays in a later chain child).
-func findMinedBluesFromMergeSet(api *HtnApi, hashes []string) []minedBlue {
+// findMinedBluesFromMergeSet fetches each mergeset-blue and returns those whose coinbase
+// contains an output to walletAddress. This "wallet-first" approach is robust even when
+// GBT caching is enabled and worker tags are absent from the coinbase payload.
+// Worker name is extracted as best-effort metadata when present.
+func findMinedBluesFromMergeSet(api *HtnApi, hashes []string, walletAddress string) []minedBlue {
 	out := make([]minedBlue, 0, len(hashes))
 	for _, h := range hashes {
 		if len(h) != 64 {
@@ -228,10 +230,15 @@ func findMinedBluesFromMergeSet(api *HtnApi, hashes []string) []minedBlue {
 		if err != nil || br == nil || br.Block == nil {
 			continue
 		}
-		w := extractWorkerFromPayload(br.Block)
-		if w == "" {
+		// Primary filter: does this blue block's coinbase pay to our wallet address?
+		// coinbaseSumToAddress returns (matched bool, sum uint64); we only need matched here.
+		ok, _ := coinbaseSumToAddress(br.Block, walletAddress)
+		if !ok {
 			continue
 		}
+		// Best-effort: extract worker name from payload for metadata purposes.
+		// Worker may be empty when GBT caching is active; callers must handle "".
+		w := extractWorkerFromPayload(br.Block)
 		out = append(out, minedBlue{Hash: h, Worker: w})
 	}
 	return out

@@ -569,10 +569,9 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		// Identify how many of our blocks (with worker tags) are in this merge set.
-		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes)
+		// Identify how many of our blocks (by wallet address) are in this merge set.
+		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes, origRecord.WalletAddress)
 		if len(minedInThisMergeSet) == 0 {
-			log.Printf("Block %s: no bridge-mined blues found in merge set of accepting block %s", blockHash, acceptingBlockHash)
 			continue
 		}
 

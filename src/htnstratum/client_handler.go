@@ -107,7 +107,7 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 				}
 				return
 			}
-			template, err := htnApi.GetBlockTemplate(client, poll, vote)
+			template, isFeeJob, err := htnApi.GetBlockTemplate(client, poll, vote)
 			if err != nil {
 				if strings.Contains(err.Error(), "Could not decode address") {
 					RecordWorkerError(client.WalletAddr, ErrInvalidAddressFmt)
@@ -127,7 +127,7 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 				return
 			}
 
-			jobId := state.AddJob(template.Block)
+			jobId := state.AddJob(template.Block, isFeeJob)
 			if !state.initialized {
 				state.initialized = true
 				state.useBigJob = bigJobRegex.MatchString(client.RemoteApp)

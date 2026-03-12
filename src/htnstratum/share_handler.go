@@ -438,10 +438,16 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
+		// Use the bridge fee address for fee jobs so the DB record matches the
+		// actual on-chain coinbase payout address instead of the miner's address.
+		walletAddr := ctx.WalletAddr
+		if state.IsFeeJob(int(submitInfo.jobId)) {
+			walletAddr = sh.htnApi.bridgeFee.Address
+		}
 		record := BlockRecord{
 			Timestamp:     time.Now().UnixMilli(),
 			BlockHash:     blockHash,
-			WalletAddress: ctx.WalletAddr,
+			WalletAddress: walletAddr,
 			WorkerName:    ctx.WorkerName,
 			RewardAtoms:   0, // updated asynchronously once the node confirms the block
 			Status: 	"pending",

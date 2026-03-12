@@ -496,9 +496,10 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 // exit once the reward is found or all retries are exhausted.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
-		maxAttempts = 30
-		retryDelay  = 30 * time.Second
-		initialRetryDelay  = 60 * time.Second
+		maxAttempts              = 30
+		retryDelay               = 30 * time.Second
+		initialRetryDelay        = 180 * time.Second
+		minAttemptsBeforeLogging = 3
 	)
 
 	var status string = "red"
@@ -561,7 +562,10 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 
 		ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
 		if !ok {
-			log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			// This is expected for fresh blocks; only log after several failed attempts
+			if attempt >= minAttemptsBeforeLogging {
+				log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			}
 			continue
 		}
 		if totalAmount == 0 {

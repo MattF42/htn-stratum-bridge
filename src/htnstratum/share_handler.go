@@ -445,40 +445,24 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	blockHash := consensushashing.BlockHash(converted).String()
 	RecordBlockFound(ctx, converted.Header.Nonce(), converted.Header.BlueScore(), blockHash)
 
-        	// Persist the found block to the mining database.
+	// Persist the found block to the mining database.
+	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
-		// Default to the Stratum login address
 		walletAddr := ctx.WalletAddr
+		isFeeJob := submitInfo.state.IsFeeJob(int(submitInfo.jobId))
+		
+		log.Printf("[DEBUG] Block Found: %s", blockHash)
+		log.Printf("[DEBUG] Miner Login: %s", walletAddr)
+		log.Printf("[DEBUG] Is Fee Job: %v", isFeeJob)
 
-		// ROBUST EXTRACTION: Look inside the actual block being submitted.
-		// The coinbase (Transactions[0]) contains the physical payment script.
 		if submitInfo.block != nil && len(submitInfo.block.Transactions) > 0 {
 			cb := submitInfo.block.Transactions[0]
-			var maxAmount uint64
-			var targetScript string
-
-			for _, out := range cb.Outputs {
-				if out.Amount > maxAmount {
-					maxAmount = out.Amount
-					if out.ScriptPublicKey != nil {
-						// Use .Script field for the Hoosat appmessage package
-						targetScript = out.ScriptPublicKey.Script
-					}
-				}
-			}
-
-			if targetScript != "" {
-				derived := deriveAddressFromScript(targetScript)
-				if derived != "" {
-					// Compare against the Stratum address (stripped of HRP for safety)
-					cleanWallet := strings.ToLower(stripHRPRewards(walletAddr))
-					if derived != cleanWallet {
-						// log.Printf("[DEBUG] Block %s: Diverted reward detected! Stratum: %s, Block Pubkey: %s", 
-							// blockHash, walletAddr, derived)
-						// Use the derived pubkey hex. The reward checker's 
-						// stripHRPRewards will handle this string correctly.
-						walletAddr = derived
-					}
+			log.Printf("[DEBUG] Coinbase Payload: %s", cb.Payload)
+			
+			// Let's also see what's in the outputs of the template itself
+			for i, out := range cb.Outputs {
+				if out.VerboseData != nil {
+					log.Printf("[DEBUG] Template Output %d: %s (%d atoms)", i, out.VerboseData.ScriptPublicKeyAddress, out.Amount)
 				}
 			}
 		}
@@ -492,12 +476,10 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			Status:        "pending",
 		}
 
-		// log.Printf("Recorded block submission", zap.String("hash", record.BlockHash), zap.String("worker", ctx.WorkerName))
+
 		if err := sh.miningDB.RecordBlock(record); err != nil {
 			log.Printf("failed to persist block %s to mining db: %v", blockHash, err)
 		} else {
-			// Query the Hoosat node API asynchronously to fetch the actual block
-			// reward once the block has been processed and update the DB record.
 			go sh.fetchAndUpdateReward(blockHash)
 		}
 	}

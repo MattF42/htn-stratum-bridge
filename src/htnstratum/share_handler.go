@@ -570,14 +570,29 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		}
 
 		// Identify how many of our blocks (by wallet address) are in this merge set.
-		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes, origRecord.WalletAddress)
+		// Pass miningDB so only blocks we actually submitted are counted, preventing
+		// double-counting when GBT caching is enabled.
+		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes, origRecord.WalletAddress, sh.miningDB)
 		if len(minedInThisMergeSet) == 0 {
+			log.Printf("Block %s: no bridge-mined blues found in merge set of accepting block %s", blockHash, acceptingBlockHash)
 			continue
 		}
 
 		// Divide the total coinbase amount for our address evenly across all
-		// of our blocks that were included in this merge set.
-		reward = totalAmount / uint64(len(minedInThisMergeSet))
+		// of our blocks that were included in this merge set using integer
+		// arithmetic so that all per-block values are valid atom counts.
+		// The remainder (at most N-1 atoms) is assigned to the first block in
+		// merge-set order so the sum of all attributed rewards exactly equals
+		// totalAmount.  Every goroutine running fetchAndUpdateReward for blocks
+		// in the same merge set independently applies the same deterministic
+		// rule, so each block ends up with a consistent integer reward.
+		count := uint64(len(minedInThisMergeSet))
+		portion := totalAmount / count
+		remainder := totalAmount % count
+		reward = portion
+		if minedInThisMergeSet[0].Hash == blockHash {
+			reward += remainder
+		}
 
 		status = "blue"
 		break // We found it, exit the retry loop

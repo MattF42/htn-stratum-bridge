@@ -120,7 +120,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 			w.WriteHeader(http.StatusOK)
 		})
 
-		registerMinerRewardsHandlers(htnApi) // <- New Rewards handler
+		registerMinerRewardsHandlers(htnApi, miningDB) // <- New Rewards handler
 
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}

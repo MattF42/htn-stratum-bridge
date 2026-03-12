@@ -473,8 +473,8 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 					// Compare against the Stratum address (stripped of HRP for safety)
 					cleanWallet := strings.ToLower(stripHRPRewards(walletAddr))
 					if derived != cleanWallet {
-						log.Printf("[DEBUG] Block %s: Diverted reward detected! Stratum: %s, Block Pubkey: %s", 
-							blockHash, walletAddr, derived)
+						// log.Printf("[DEBUG] Block %s: Diverted reward detected! Stratum: %s, Block Pubkey: %s", 
+							// blockHash, walletAddr, derived)
 						// Use the derived pubkey hex. The reward checker's 
 						// stripHRPRewards will handle this string correctly.
 						walletAddr = derived

@@ -40,6 +40,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	// "time"
@@ -65,7 +66,7 @@ type RewardsRow struct {
 
 // Register the rewards endpoint
 // GET /miner/rewards?address=<hoosat:..>&limit=400&startHash=<cursor>&worker=<WorkerName>
-func registerMinerRewardsHandlers(api *HtnApi) {
+func registerMinerRewardsHandlers(api *HtnApi, db *MiningDB) {
 	http.HandleFunc("/miner/rewards", func(w http.ResponseWriter, r *http.Request) {
 		// start := time.Now()
 
@@ -114,7 +115,7 @@ func registerMinerRewardsHandlers(api *HtnApi) {
 		out := make([]RewardsRow, 0, len(blocks))
 		for _, br := range blocks {
 			// Per-block guard so one bad block doesn't kill the whole response
-			rows, err := processPayingBlock(api, br, addr, workerFilter)
+			rows, err := processPayingBlock(api, br, addr, workerFilter, db)
 			if err != nil {
 				logError(api, fmt.Sprintf("skip paying block due to error: %v", err))
 				continue
@@ -136,7 +137,7 @@ func registerMinerRewardsHandlers(api *HtnApi) {
 
 // Process a single chain block that might be paying our address.
 // Returns rows (one per mined blue) or an error to skip this block.
-func processPayingBlock(api *HtnApi, br *appmessage.GetBlockResponseMessage, addr string, workerFilter string) ([]RewardsRow, error) {
+func processPayingBlock(api *HtnApi, br *appmessage.GetBlockResponseMessage, addr string, workerFilter string, db *MiningDB) ([]RewardsRow, error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			logError(api, fmt.Sprintf("panic in processPayingBlock: %v\n%s", rec, string(debug.Stack())))
@@ -154,7 +155,7 @@ func processPayingBlock(api *HtnApi, br *appmessage.GetBlockResponseMessage, add
 	}
 
 	// Identify our mined blue blocks by wallet address in their coinbase outputs.
-	mined := findMinedBluesFromMergeSet(api, br.Block.VerboseData.MergeSetBluesHashes, addr)
+	mined := findMinedBluesFromMergeSet(api, br.Block.VerboseData.MergeSetBluesHashes, addr, db)
 	if len(mined) == 0 {
 		// No mergeset blue pays to our wallet; this paying block is not attributable -> skip silently
 		return nil, nil
@@ -216,31 +217,57 @@ type minedBlue struct {
 	Worker string
 }
 
-// findMinedBluesFromMergeSet fetches each mergeset-blue and returns those whose coinbase
-// contains an output to walletAddress. This "wallet-first" approach is robust even when
-// GBT caching is enabled and worker tags are absent from the coinbase payload.
-// Worker name is extracted as best-effort metadata when present.
-func findMinedBluesFromMergeSet(api *HtnApi, hashes []string, walletAddress string) []minedBlue {
+// findMinedBluesFromMergeSet fetches each mergeset-blue and returns those that were
+// submitted by this bridge. When db is non-nil, block hashes are cross-referenced
+// against the local block_rewards table so that only blocks we actually submitted
+// are counted — this prevents double-counting when GBT caching is enabled and
+// multiple blocks in the merge set share the same payout address.
+// When db is nil (e.g. read-only API callers without DB access) the function
+// falls back to wallet-address matching in each block's coinbase.
+// Worker name is extracted from the DB record (most reliable) or the coinbase
+// payload as a best-effort fallback.
+// The returned slice is sorted by hash to guarantee a deterministic ordering
+// so that remainder-atom assignment is consistent across all goroutines.
+func findMinedBluesFromMergeSet(api *HtnApi, hashes []string, walletAddress string, db *MiningDB) []minedBlue {
 	out := make([]minedBlue, 0, len(hashes))
 	for _, h := range hashes {
 		if len(h) != 64 {
 			continue
 		}
-		br, err := api.hoosat.GetBlock(h, true)
-		if err != nil || br == nil || br.Block == nil {
-			continue
+		if db != nil {
+			// DB-backed: only count blocks we actually submitted.
+			rec, err := db.GetBlock(h)
+			if err != nil {
+				// Log the database error but continue — a transient DB failure
+				// should not silently suppress a block that we may have mined.
+				fmt.Fprintf(os.Stderr, "findMinedBluesFromMergeSet: db error for hash %s: %v\n", h, err)
+				continue
+			}
+			if rec == nil {
+				continue // Not recorded in our DB → not our block
+			}
+			// Worker name from the DB record is reliable even when GBT
+			// caching suppresses the per-worker coinbase payload tag.
+			out = append(out, minedBlue{Hash: h, Worker: rec.WorkerName})
+		} else {
+			// Fallback: wallet-address matching in coinbase (used when no DB available).
+			br, err := api.hoosat.GetBlock(h, true)
+			if err != nil || br == nil || br.Block == nil {
+				continue
+			}
+			ok, _ := coinbaseSumToAddress(br.Block, walletAddress)
+			if !ok {
+				continue
+			}
+			w := extractWorkerFromPayload(br.Block)
+			out = append(out, minedBlue{Hash: h, Worker: w})
 		}
-		// Primary filter: does this blue block's coinbase pay to our wallet address?
-		// coinbaseSumToAddress returns (matched bool, sum uint64); we only need matched here.
-		ok, _ := coinbaseSumToAddress(br.Block, walletAddress)
-		if !ok {
-			continue
-		}
-		// Best-effort: extract worker name from payload for metadata purposes.
-		// Worker may be empty when GBT caching is active; callers must handle "".
-		w := extractWorkerFromPayload(br.Block)
-		out = append(out, minedBlue{Hash: h, Worker: w})
 	}
+	// Sort by hash to ensure a stable, deterministic order independent of
+	// the node's merge-set enumeration order.  This guarantees that every
+	// concurrent fetchAndUpdateReward goroutine for the same merge set picks
+	// the same "first" block when assigning the integer remainder.
+	sort.Slice(out, func(i, j int) bool { return out[i].Hash < out[j].Hash })
 	return out
 }
 

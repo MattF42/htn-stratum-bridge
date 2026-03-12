@@ -211,10 +211,11 @@ func sanitizeWorkerID(s string) string {
 	return s
 }
 
-func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
+func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, bool, error) {
 	total := atomic.AddUint64(&htnApi.gbtTotal, 1)
 	// Determine the target payout address (miner or bridge)
 	payoutAddress := client.WalletAddr
+	isFeeJob := false
 
 	// Check if bridge fee is enabled and should replace this GBT
 	if htnApi.bridgeFee.Enabled && htnApi.bridgeFee.ServerSalt != "" {
@@ -258,6 +259,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 				// Check if this GBT should be diverted to bridge address
 				if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
 					payoutAddress = htnApi.bridgeFee.Address
+					isFeeJob = true
 					diverted := atomic.AddUint64(&htnApi.gbtDiverted, 1)
 					htnApi.logger.Debug("diverting GBT to bridge address",
 						zap.Uint64("job_counter", jobCounterValue),
@@ -314,7 +316,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			        rate := (float64(hits) / float64(total)) * 100.0
 			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
 		        }
-			return cached, nil
+			return cached, isFeeJob, nil
 		}
 		htnApi.gbtCacheMu.Unlock()
                 atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
@@ -322,18 +324,18 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		// Cache miss or expired – fetch outside the lock.
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+			return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
 		htnApi.gbtCacheMu.Lock()
 		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{template: template, fetchedAt: time.Now()}
 		htnApi.gbtCacheMu.Unlock()
-		return template, nil
+		return template, isFeeJob, nil
 	}
 
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+		return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 	}
 
-	return template, nil
+	return template, isFeeJob, nil
 }

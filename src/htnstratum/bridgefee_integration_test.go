@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 	"go.uber.org/zap"
 )
@@ -133,5 +134,98 @@ func TestStratumContext_WorkerInfo(t *testing.T) {
 	}
 	if ctx.WorkerName == "" {
 		t.Error("WorkerName should not be empty")
+	}
+}
+
+func TestMiningState_AddJob_NormalJob(t *testing.T) {
+	ms := &MiningState{
+		Jobs:    make(map[int]*appmessage.RPCBlock),
+		FeeJobs: make(map[int]bool),
+	}
+
+	block := &appmessage.RPCBlock{}
+	jobId := ms.AddJob(block, false)
+
+	if ms.IsFeeJob(jobId) {
+		t.Error("normal job should not be marked as a fee job")
+	}
+	got, exists := ms.GetJob(jobId)
+	if !exists {
+		t.Fatal("job should exist after AddJob")
+	}
+	if got != block {
+		t.Error("GetJob should return the same block pointer")
+	}
+}
+
+func TestMiningState_AddJob_FeeJob(t *testing.T) {
+	ms := &MiningState{
+		Jobs:    make(map[int]*appmessage.RPCBlock),
+		FeeJobs: make(map[int]bool),
+	}
+
+	block := &appmessage.RPCBlock{}
+	jobId := ms.AddJob(block, true)
+
+	if !ms.IsFeeJob(jobId) {
+		t.Error("fee job should be marked as a fee job")
+	}
+}
+
+func TestMiningState_RemoveJob_ClearsFeeJob(t *testing.T) {
+	ms := &MiningState{
+		Jobs:    make(map[int]*appmessage.RPCBlock),
+		FeeJobs: make(map[int]bool),
+	}
+
+	block := &appmessage.RPCBlock{}
+	jobId := ms.AddJob(block, true)
+	ms.RemoveJob(jobId)
+
+	if ms.IsFeeJob(jobId) {
+		t.Error("IsFeeJob should return false after RemoveJob")
+	}
+	_, exists := ms.GetJob(jobId)
+	if exists {
+		t.Error("GetJob should return false after RemoveJob")
+	}
+}
+
+func TestMiningState_ClearJobs_ClearsFeeJobs(t *testing.T) {
+	ms := &MiningState{
+		Jobs:    make(map[int]*appmessage.RPCBlock),
+		FeeJobs: make(map[int]bool),
+	}
+
+	ms.AddJob(&appmessage.RPCBlock{}, true)
+	ms.AddJob(&appmessage.RPCBlock{}, false)
+	ms.AddJob(&appmessage.RPCBlock{}, true)
+	ms.ClearJobs()
+
+	if len(ms.Jobs) != 0 {
+		t.Errorf("Jobs map should be empty after ClearJobs, got %d entries", len(ms.Jobs))
+	}
+	if len(ms.FeeJobs) != 0 {
+		t.Errorf("FeeJobs map should be empty after ClearJobs, got %d entries", len(ms.FeeJobs))
+	}
+}
+
+func TestMiningState_OverwriteWithNormalAfterFee(t *testing.T) {
+	// Verify that when a slot is reused, a fee-job flag from a previous job is
+	// cleared when a normal job occupies the same slot.
+	ms := &MiningState{
+		Jobs:    make(map[int]*appmessage.RPCBlock),
+		FeeJobs: make(map[int]bool),
+	}
+
+	// Fill maxjobs slots with fee jobs so the next AddJob wraps around.
+	for i := 0; i < maxjobs; i++ {
+		ms.AddJob(&appmessage.RPCBlock{}, true)
+	}
+
+	// The next job wraps to slot 0 (counter % maxjobs == 0) and is NOT a fee job.
+	jobId := ms.AddJob(&appmessage.RPCBlock{}, false)
+	if ms.IsFeeJob(jobId) {
+		t.Error("slot reused by a normal job should not report IsFeeJob == true")
 	}
 }

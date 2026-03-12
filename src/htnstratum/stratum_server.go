@@ -125,7 +125,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats, htnApi.invalidateGBTCache, miningDB)
+	shareHandler := newShareHandler(htnApi.hoosat, htnApi, cfg.RollingStats, htnApi.invalidateGBTCache, miningDB)
 
 	// Start the miner stats web UI if a port is configured.  We pass the
 	// shareHandler so that the /stats page can display live worker stats.

@@ -49,6 +49,7 @@ type WorkStats struct {
 
 type shareHandler struct {
 	hoosat             *rpcclient.RPCClient
+	htnApi             *HtnApi
 	state              *MiningState
 	soloDiff           float64
 	stats              map[string]*WorkStats
@@ -95,9 +96,10 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func(), miningDB *MiningDB) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, htnApi *HtnApi, rollingStats bool, invalidateGBTCache func(), miningDB *MiningDB) *shareHandler {
 	return &shareHandler{
 		hoosat: hoosat,
+		htnApi: htnApi,
 		stats:  map[string]*WorkStats{},
 		overall: WorkStats{
 			RollingShares:        make(map[int64]int64),
@@ -549,28 +551,37 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		// 4. Extract reward from the accepting block's coinbase
-		// The coinbase is always the first transaction [0]
-		coinbase := acceptingBlock.Block.Transactions[0]
-
-		// Important: A block can merge multiple blue blocks. 
-		// We must find the index of OUR blockHash in the MergeSetBlues list.
-		rewardIndex := -1
-		for i, blueHash := range acceptingBlock.Block.VerboseData.MergeSetBluesHashes {
-			if blueHash == blockHash {
-				rewardIndex = i
-				break
-			}
+		// 4. Extract reward from the accepting block's coinbase using the
+		// robust address-based summation from miner_rewards.go.
+		origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
+		if dbErr != nil || origRecord == nil {
+			log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
+			continue
 		}
 
-		if rewardIndex != -1 && len(coinbase.Outputs) > rewardIndex {
-			reward = coinbase.Outputs[rewardIndex].Amount
-			// log.Printf("SUCCESS: Block %s rewarded in %s (index %d): %d atoms",
-				// blockHash, acceptingBlockHash, rewardIndex, reward)
-			break // We found it, exit the retry loop
+		ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
+		if !ok {
+			log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			continue
+		}
+		if totalAmount == 0 {
+			log.Printf("Block %s: coinbase sum is zero for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			continue
 		}
 
-		// log.Printf("Block %s found in chain, but reward index not matched. Retrying...", blockHash)
+		// Identify how many of our blocks (with worker tags) are in this merge set.
+		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes)
+		if len(minedInThisMergeSet) == 0 {
+			log.Printf("Block %s: no bridge-mined blues found in merge set of accepting block %s", blockHash, acceptingBlockHash)
+			continue
+		}
+
+		// Divide the total coinbase amount for our address evenly across all
+		// of our blocks that were included in this merge set.
+		reward = totalAmount / uint64(len(minedInThisMergeSet))
+
+		status = "blue"
+		break // We found it, exit the retry loop
 	}
 
 	if reward == 0 { status = "red" }

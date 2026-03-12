@@ -186,6 +186,29 @@ func (db *MiningDB) GetTotalAtomsByWallet(wallet string) (uint64, error) {
 }
 
 
+// GetBlock returns a single BlockRecord by its block hash.
+// Returns (nil, nil) if no record is found.
+func (d *MiningDB) GetBlock(blockHash string) (*BlockRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	row := d.db.QueryRow(
+		`SELECT id, timestamp, block_hash, wallet_address, worker_name, reward_atoms, status
+		 FROM block_rewards WHERE block_hash = ?`,
+		blockHash,
+	)
+
+	var r BlockRecord
+	err := row.Scan(&r.ID, &r.Timestamp, &r.BlockHash, &r.WalletAddress, &r.WorkerName, &r.RewardAtoms, &r.Status)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // Close closes the underlying database connection.
 func (d *MiningDB) Close() error {
 	return d.db.Close()

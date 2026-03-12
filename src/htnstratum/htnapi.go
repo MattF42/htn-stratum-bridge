@@ -22,6 +22,7 @@ import (
 // gbtCacheEntry holds a cached GetBlockTemplate response and the time it was fetched.
 type gbtCacheEntry struct {
 	template  *appmessage.GetBlockTemplateResponseMessage
+	isFeeJob bool
 	fetchedAt time.Time
 }
 
@@ -308,6 +309,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		entry, ok := htnApi.gbtCache[payoutAddress]
 		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
 			cached := entry.template
+			cachedIsFee := entry.isFeeJob
 			htnApi.gbtCacheMu.Unlock()
                        	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
 		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
@@ -316,7 +318,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			        rate := (float64(hits) / float64(total)) * 100.0
 			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
 		        }
-			return cached, isFeeJob, nil
+			return cached, cachedIsFee, nil // Make sure feejob not accidentally cached!!
 		}
 		htnApi.gbtCacheMu.Unlock()
                 atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
@@ -327,7 +329,12 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
 		htnApi.gbtCacheMu.Lock()
-		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{template: template, fetchedAt: time.Now()}
+		// Store the pair together
+		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{
+			template:  template,
+			isFeeJob:  isFeeJob,
+			fetchedAt: time.Now(),
+		}
 		htnApi.gbtCacheMu.Unlock()
 		return template, isFeeJob, nil
 	}

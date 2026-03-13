@@ -154,6 +154,10 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .wbs-modal-box h3{color:#00d4ff;margin-top:0}
   .wbs-modal-close{float:right;background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;line-height:1}
   .wbs-modal-close:hover{color:#fff}
+  .wbs-modal-box table th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+  .wbs-modal-box table th.sortable:hover{color:#00d4ff}
+  .wbs-modal-box table th .sort-arrow{margin-left:4px;opacity:0.35;font-style:normal}
+  .wbs-modal-box table th.sort-asc .sort-arrow,.wbs-modal-box table th.sort-desc .sort-arrow{opacity:1;color:#00d4ff}
   .wbs-link{color:#00d4ff;font-size:0.75em;font-weight:normal;text-decoration:underline;cursor:pointer}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
@@ -612,6 +616,81 @@ setInterval(_refreshStats, _refreshIntervalMs);
 _startCountdown();
 
 // ── Worker Block Stats modal ───────────────────────────────────────────────
+var _wbsData = [];
+var _wbsSortCol = 'blue_percent'; // matches JSON field from /api/worker_counts; displayed as "% Blue"
+var _wbsSortDir = 'desc';
+
+var _wbsColMap = {
+  'worker_name': 'wbs-th-name',
+  'blue':        'wbs-th-blue',
+  'red':         'wbs-th-red',
+  'blue_percent':'wbs-th-pct'
+};
+
+function sortWbsTable(col) {
+  if (_wbsSortCol === col) {
+    _wbsSortDir = (_wbsSortDir === 'asc') ? 'desc' : 'asc';
+  } else {
+    _wbsSortCol = col;
+    _wbsSortDir = (col === 'worker_name') ? 'asc' : 'desc';
+  }
+  renderWbsTable();
+}
+
+function renderWbsTable() {
+  var tbody = document.getElementById('wbs-tbody');
+  if (!tbody) return;
+
+  // Update header sort indicators
+  var cols = Object.keys(_wbsColMap);
+  for (var c = 0; c < cols.length; c++) {
+    var th = document.getElementById(_wbsColMap[cols[c]]);
+    if (!th) continue;
+    th.classList.remove('sort-asc', 'sort-desc');
+    var arrow = th.querySelector('.sort-arrow');
+    if (cols[c] === _wbsSortCol) {
+      th.classList.add(_wbsSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      if (arrow) arrow.textContent = (_wbsSortDir === 'asc') ? '↑' : '↓';
+    } else {
+      if (arrow) arrow.textContent = '↕';
+    }
+  }
+
+  if (!_wbsData || _wbsData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa">No data found.</td></tr>';
+    return;
+  }
+
+  var sorted = _wbsData.slice();
+  var col = _wbsSortCol;
+  var dir = _wbsSortDir;
+  sorted.sort(function(a, b) {
+    var av = a[col], bv = b[col];
+    if (col === 'worker_name') {
+      av = (av || '').toLowerCase();
+      bv = (bv || '').toLowerCase();
+      if (av < bv) return dir === 'asc' ? -1 : 1;
+      if (av > bv) return dir === 'asc' ? 1 : -1;
+      return 0;
+    }
+    av = av || 0;
+    bv = bv || 0;
+    return dir === 'asc' ? av - bv : bv - av;
+  });
+
+  var html = '';
+  for (var i = 0; i < sorted.length; i++) {
+    var wk = sorted[i];
+    html += '<tr>' +
+      '<td>' + escHtml(wk.worker_name) + '</td>' +
+      '<td style="color:#4fc3f7">' + wk.blue + '</td>' +
+      '<td style="color:#ef9a9a">' + wk.red + '</td>' +
+      '<td>' + (wk.blue_percent || 0).toFixed(1) + '%</td>' +
+      '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
 function openWorkerBlockModal() {
   document.getElementById('wbs-modal').classList.add('open');
   fetchWorkerBlockStats();
@@ -632,21 +711,8 @@ function fetchWorkerBlockStats() {
   fetch('/api/worker_counts?address=' + encodeURIComponent(_addr))
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa">No data found.</td></tr>';
-        return;
-      }
-      var html = '';
-      for (var i = 0; i < data.length; i++) {
-        var wk = data[i];
-        html += '<tr>' +
-          '<td>' + escHtml(wk.worker_name) + '</td>' +
-          '<td style="color:#4fc3f7">' + wk.blue + '</td>' +
-          '<td style="color:#ef9a9a">' + wk.red + '</td>' +
-          '<td>' + (wk.blue_percent || 0).toFixed(1) + '%</td>' +
-          '</tr>';
-      }
-      tbody.innerHTML = html;
+      _wbsData = data || [];
+      renderWbsTable();
     })
     .catch(function(err) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ff6b6b">Error loading data.</td></tr>';
@@ -663,10 +729,10 @@ function fetchWorkerBlockStats() {
     <table>
       <thead>
         <tr>
-          <th>Worker Name</th>
-          <th>Blue Blocks</th>
-          <th>Red Blocks</th>
-          <th>% Blue</th>
+          <th class="sortable" id="wbs-th-name" onclick="sortWbsTable('worker_name')">Worker Name <span class="sort-arrow">↕</span></th>
+          <th class="sortable" id="wbs-th-blue" onclick="sortWbsTable('blue')">Blue Blocks <span class="sort-arrow">↕</span></th>
+          <th class="sortable" id="wbs-th-red" onclick="sortWbsTable('red')">Red Blocks <span class="sort-arrow">↕</span></th>
+          <th class="sortable" id="wbs-th-pct" onclick="sortWbsTable('blue_percent')">% Blue <span class="sort-arrow">↕</span></th>
         </tr>
       </thead>
       <tbody id="wbs-tbody">

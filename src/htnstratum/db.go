@@ -3,6 +3,7 @@ package htnstratum
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -279,4 +280,50 @@ func (d *MiningDB) GetBlock(blockHash string) (*BlockRecord, error) {
 // Close closes the underlying database connection.
 func (d *MiningDB) Close() error {
 	return d.db.Close()
+}
+
+// WorkerBlockCount holds per-worker blue/red block counts used by the
+// /api/worker_counts endpoint and populated by GetWorkerBlockCountsByWallet.
+// BluePercent is 0 when a worker has no confirmed (blue+red) blocks yet.
+type WorkerBlockCount struct {
+	WorkerName  string  `json:"worker_name"`
+	Blue        int     `json:"blue"`
+	Red         int     `json:"red"`
+	BluePercent float64 `json:"blue_percent"`
+}
+
+// GetWorkerBlockCountsByWallet returns per-worker blue/red block counts for the
+// given wallet, sorted by % blue descending.  Blue includes 'blue' and
+// 'merge_duplicate'; pending blocks are ignored in the percentage calculation.
+func (db *MiningDB) GetWorkerBlockCountsByWallet(wallet string) ([]WorkerBlockCount, error) {
+	rows, err := db.db.Query(`
+		SELECT worker_name,
+		       SUM(CASE WHEN status = 'blue' OR status = 'merge_duplicate' THEN 1 ELSE 0 END) AS blue,
+		       SUM(CASE WHEN status = 'red' THEN 1 ELSE 0 END) AS red
+		FROM block_rewards
+		WHERE wallet_address = ?
+		GROUP BY worker_name`, wallet)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []WorkerBlockCount
+	for rows.Next() {
+		var w WorkerBlockCount
+		if err := rows.Scan(&w.WorkerName, &w.Blue, &w.Red); err != nil {
+			return nil, err
+		}
+		if total := w.Blue + w.Red; total > 0 {
+			w.BluePercent = float64(w.Blue) / float64(total) * 100
+		}
+		out = append(out, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].BluePercent > out[j].BluePercent
+	})
+	return out, nil
 }

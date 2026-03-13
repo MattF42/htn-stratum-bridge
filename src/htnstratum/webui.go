@@ -148,6 +148,13 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
   .pagination .page-info{font-size:13px;color:#aaa}
   #refresh-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center}
   #refresh-overlay .refresh-box{background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:20px 40px;color:#00d4ff;font-size:16px}
+  .wbs-modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;align-items:center;justify-content:center}
+  .wbs-modal-overlay.open{display:flex}
+  .wbs-modal-box{background:#16213e;border:1px solid #0f3460;border-radius:8px;padding:24px;max-width:700px;width:95%;max-height:80vh;overflow-y:auto}
+  .wbs-modal-box h3{color:#00d4ff;margin-top:0}
+  .wbs-modal-close{float:right;background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;line-height:1}
+  .wbs-modal-close:hover{color:#fff}
+  .wbs-link{color:#00d4ff;font-size:0.75em;font-weight:normal;text-decoration:underline;cursor:pointer}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
@@ -201,7 +208,7 @@ function copyToClipboard() {
 </div>
 {{if .LiveWorkers}}
 <div id="workers-section">
-<h3>Current Workers</h3>
+<h3>Current Workers → <a href="javascript:void(0)" onclick="openWorkerBlockModal()" class="wbs-link">Historical Per Worker Stats</a> ←</h3>
 <table>
 <thead>
 <tr>
@@ -604,10 +611,75 @@ setInterval(_refreshStats, _refreshIntervalMs);
 // Start the initial countdown immediately on page load
 _startCountdown();
 
+// ── Worker Block Stats modal ───────────────────────────────────────────────
+function openWorkerBlockModal() {
+  document.getElementById('wbs-modal').classList.add('open');
+  fetchWorkerBlockStats();
+}
+
+function closeWorkerBlockModal() {
+  document.getElementById('wbs-modal').classList.remove('open');
+}
+
+document.getElementById('wbs-modal').addEventListener('click', function(e) {
+  if (e.target === this) { closeWorkerBlockModal(); }
+});
+
+function fetchWorkerBlockStats() {
+  var tbody = document.getElementById('wbs-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa">Loading…</td></tr>';
+  fetch('/api/worker_counts?address=' + encodeURIComponent(_addr))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa">No data found.</td></tr>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < data.length; i++) {
+        var wk = data[i];
+        html += '<tr>' +
+          '<td>' + escHtml(wk.worker_name) + '</td>' +
+          '<td style="color:#4fc3f7">' + wk.blue + '</td>' +
+          '<td style="color:#ef9a9a">' + wk.red + '</td>' +
+          '<td>' + (wk.blue_percent || 0).toFixed(1) + '%</td>' +
+          '</tr>';
+      }
+      tbody.innerHTML = html;
+    })
+    .catch(function(err) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ff6b6b">Error loading data.</td></tr>';
+      console.error('worker block stats error', err);
+    });
+}
+
 </script>
+
+<div id="wbs-modal" class="wbs-modal-overlay">
+  <div class="wbs-modal-box">
+    <button class="wbs-modal-close" onclick="closeWorkerBlockModal()" title="Close">✕</button>
+    <h3>Historical Per Worker Stats</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Worker Name</th>
+          <th>Blue Blocks</th>
+          <th>Red Blocks</th>
+          <th>% Blue</th>
+        </tr>
+      </thead>
+      <tbody id="wbs-tbody">
+        <tr><td colspan="4" style="text-align:center;color:#aaa">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 </body>
 </html>`))
 
+// WorkerBlockCount holds per-worker blue/red block counts used by the
+// /api/worker_counts endpoint and populated by GetWorkerBlockCountsByWallet.
 type statsPageData struct {
 	Address     string
 	Blocks      []BlockRecord
@@ -781,6 +853,28 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
         	"pending":      pending,
         	"blue_percent": bluePercent,
     	})
+	})
+
+	// GET /api/worker_counts?address=<addr> — per-worker blue/red block counts
+	mux.HandleFunc("/api/worker_counts", func(w http.ResponseWriter, r *http.Request) {
+		addr := strings.TrimSpace(r.URL.Query().Get("address"))
+		if addr == "" {
+			http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
+			return
+		}
+		counts, err := db.GetWorkerBlockCountsByWallet(addr)
+		if err != nil {
+			logger.Warn("webui: api worker_counts db error", zap.Error(err))
+			http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
+			return
+		}
+		if counts == nil {
+			counts = []WorkerBlockCount{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(counts); err != nil {
+			logger.Warn("webui: api worker_counts encode error", zap.Error(err))
+		}
 	})
 
 	// GET /api/stats?address=<addr> — JSON API for the auto-refresh data

@@ -586,7 +586,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 
 		acceptingBlockHash := chainInfo.AddedChainBlockHashes[0]
 
-		// 3) Load our original record to get the wallet address.
+                // 3) Load our original record to get the wallet address.
 		origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
 		if dbErr != nil || origRecord == nil {
 			if dbErr != nil {
@@ -594,59 +594,54 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			}
 			continue
 		}
-
-		// Persist the accepting block hash (even if we end up being a merge_duplicate),
-		// so the UI can show which accepting block this mined block mapped to.
+		
+		// 4) Enforce "accepting-block-level" booking:
+		// Check FIRST, before writing accepting_block_hash for this record, otherwise we match ourselves.
+		alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWallet(origRecord.WalletAddress, acceptingBlockHash)
+		if err != nil {
+			log.Printf("Error checking accepting booking for wallet %s accepting %s: %v", origRecord.WalletAddress, acceptingBlockHash, err)
+			continue
+		}
+		
+		// Persist the accepting block hash for UI/debugging in both paths (booked and duplicate).
 		if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
 			log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
 			// Not fatal; continue with reward logic.
 		}
+		
+		if alreadyBooked {
+			// This mined block maps to an accepting block we've already processed.
+			// Keep it "blue-ish" but zero reward.
+			status = "merge_duplicate"
+			reward = 0
+			break
+		}
+		
+		// 5) Fetch accepting block with transactions and sum coinbase outputs paying our wallet.
+		acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
+		if err != nil || acceptingBlock == nil || acceptingBlock.Block == nil {
+			continue
+		}
+		
+		ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
+		if !ok || totalAmount == 0 {
+			if attempt >= minAttemptsBeforeLogging {
+				log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s",
+					blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			}
+			continue
+		}
+		
+		reward = totalAmount
+		status = "blue"
+		break
 
-                // 4) Enforce "accepting-block-level" booking:
-                // Check FIRST, before writing accepting_block_hash for this record, otherwise we match ourselves.
-                alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWallet(origRecord.WalletAddress, acceptingBlockHash)
-                if err != nil {
-	                log.Printf("Error checking accepting booking for wallet %s accepting %s: %v", origRecord.WalletAddress, acceptingBlockHash, err)
-	                continue
-                }
-                
-                // Persist the accepting block hash for UI/debugging in both paths (booked and duplicate).
-                if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
-	                log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
-	                // Not fatal; continue with reward logic.
-                }
-                
-                if alreadyBooked {
-	                // This mined block maps to an accepting block we've already processed.
-	                // Keep it "blue-ish" but zero reward.
-	                status = "merge_duplicate"
-	                reward = 0
-	                break
-                }
-                
-                // 5) Fetch accepting block with transactions and sum coinbase outputs paying our wallet.
-                acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
-                if err != nil || acceptingBlock == nil || acceptingBlock.Block == nil {
-	                continue
-                }
-                
-                ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
-                if !ok || totalAmount == 0 {
-	                if attempt >= minAttemptsBeforeLogging {
-		                log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
-	                }
-	                continue
-                }
-                
-                reward = totalAmount
-                status = "blue"
-                break
-	                }
+	        }
                 
 	       // Final DB update (even if red/merge_duplicate)
 	       if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
 		log.Printf("failed to update block %s in DB: %v", blockHash, err)
-	}
+		}
 }
 
 

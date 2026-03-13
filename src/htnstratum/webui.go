@@ -254,7 +254,17 @@ function copyToClipboard() {
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>{{if eq $b.RewardAtoms 0}}{{if isStale $b.Timestamp}}<span style="color:red;">RED BLOCK</span>{{else}}<span class="badge-pending">Pending</span>{{end}}{{else}}<span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>{{end}}</td>
+  <td>
+  {{if eq $b.Status "blue"}}
+    <span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>
+  {{else if eq $b.Status "merge_duplicate"}}
+    <span style="color: blue;">Merge Duplicate</span>
+  {{else if eq $b.Status "red"}}
+    <span style="color: red;">RED BLOCK</span>
+  {{else}}
+    <span class="badge-pending">Pending</span>
+  {{end}}
+</td>
 </tr>
 {{end}}
 </tbody>
@@ -330,6 +340,9 @@ function renderTable(blocks) {
     // var ageMin = (nowMs - b.Timestamp) / 60000;
     if (b.Status === 'blue') {
     rewardCell = '<span style="color: green;">' + fmtAtoms(b.RewardAtoms) + '</span>';
+    } else if (b.Status === 'merge_duplicate') {
+      // Merge duplicate is "blue-ish" but has no additional payout attributable to this block.
+      rewardCell = '<span style="color: blue;">Merge Duplicate</span>';
   } else if (b.Status === 'red') {
     rewardCell = '<span style="color: red;">RED BLOCK</span>';
   } else {

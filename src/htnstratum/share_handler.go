@@ -523,10 +523,13 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 }
 
 // fetchAndUpdateReward queries the Hoosat node API to retrieve the coinbase
-// reward for the given block hash, then updates the DB record.  It is
-// intended to run in a background goroutine and retries a few times to
-// handle propagation latency.  The goroutine is fire-and-forget and will
-// exit once the reward is found or all retries are exhausted.
+// reward for the given block hash, then updates the DB record.
+//
+// IMPORTANT: We track rewards at the *accepting block* level (the next chain blue),
+// because in GHOSTDAG the mined block itself is NOT the paying block.
+// If multiple mined blocks map to the same accepting block for a wallet, we book the
+// reward only once (first-come) and mark the rest as "merge_duplicate" with 0 atoms.
+// The UI should display merge_duplicate as "Merge Duplicate" but still count as blue.
 func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 	const (
 		maxAttempts              = 15
@@ -535,10 +538,17 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		minAttemptsBeforeLogging = 3
 	)
 
-	var status string = "red"
-	var reward uint64 = 0
+	// Safety: DB must exist for this goroutine to do anything useful.
+	if sh.miningDB == nil {
+		return
+	}
 
-	// Initial Delay to allow DAG to settle and re-org and avoid false positives
+	var (
+		status string = "red"
+		reward uint64 = 0
+	)
+
+	// Initial Delay to allow DAG to settle and avoid false positives during re-org windows.
 	time.Sleep(initialRetryDelay)
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -546,7 +556,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			time.Sleep(retryDelay)
 		}
 
-		// 1. Check if our block is in the DAG
+		// 1) Confirm our mined block is known.
 		br, err := sh.hoosat.GetBlock(blockHash, true)
 		if err != nil || br == nil || br.Block == nil {
 			if attempt >= minAttemptsBeforeLogging {
@@ -555,15 +565,14 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		// In GHOSTDAG, only blocks in the Selected Parent Chain (Chain Blocks)
-		// are guaranteed to have their rewards finalized in the coinbase.
-		if !br.Block.VerboseData.IsChainBlock {
+		// If our block isn't a chain block, its payout semantics are uncertain; keep retrying.
+		// (Depending on the DAG state, it might still end up in chain or be pruned/reorged.)
+		if br.Block.VerboseData == nil || !br.Block.VerboseData.IsChainBlock {
 			status = "red"
 			continue
 		}
 
-		// 2. Find the "Accepting Block" (the one that pays us)
-		// We walk the chain to find the NEXT block where the payment actually appears.
+		// 2) Find the accepting (paying) block: the next selected-parent-chain block after ours.
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
 		if err != nil {
 			log.Printf("Error fetching VSP chain from %s: %v", blockHash, err)
@@ -571,66 +580,71 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		}
 
 		// If AddedChainBlocks is empty, no block has been mined on top of ours yet.
-		if len(chainInfo.AddedChainBlockHashes) == 0 {
+		if chainInfo == nil || len(chainInfo.AddedChainBlockHashes) == 0 {
 			continue
 		}
 
-		// 3. Extract the physical reward from the coinbase of the successor.
 		acceptingBlockHash := chainInfo.AddedChainBlockHashes[0]
-		acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
-		if err != nil || acceptingBlock == nil || len(acceptingBlock.Block.Transactions) == 0 {
-			continue
-		}
 
-		// Fetch the original record to get the wallet address.
+		// 3) Load our original record to get the wallet address.
 		origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
 		if dbErr != nil || origRecord == nil {
-			log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
-			continue
-		}
-
-		// 4. Physical Truth: Get the total amount paid to this address in the coinbase.
-		ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
-		if !ok || totalAmount == 0 {
-			if attempt >= minAttemptsBeforeLogging {
-				log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+			if dbErr != nil {
+				log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
 			}
 			continue
 		}
 
-		// 5. Shared Wallet Attribution:
-		// Identify how many blocks we (this bridge) mined in this merge set for this address.
-		minedInThisMergeSet := findMinedBluesFromMergeSet(sh.htnApi, acceptingBlock.Block.VerboseData.MergeSetBluesHashes, origRecord.WalletAddress, sh.miningDB)
-		
-		count := uint64(len(minedInThisMergeSet))
-
-		// THE ROBUST FIX:
-		// If we only mined ONE block in this set (the standard case), we take the ENTIRE payout.
-		// If we mined multiple (Parallel Blocks), we distribute the total amount fairly.
-		if count <= 1 {
-			reward = totalAmount
-		} else {
-			// SHARED WALLET CASE: Distribute the total coinbase amount across all blocks.
-			portion := totalAmount / count
-			remainder := totalAmount % count
-			
-			reward = portion
-			// Assign the 1-atom remainder to the first block in the merge-set order.
-			if minedInThisMergeSet[0].Hash == blockHash {
-				reward += remainder
-			}
+		// Persist the accepting block hash (even if we end up being a merge_duplicate),
+		// so the UI can show which accepting block this mined block mapped to.
+		if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
+			log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
+			// Not fatal; continue with reward logic.
 		}
 
-		status = "blue"
-		break 
-	}
-
-	if reward == 0 {
-		status = "red"
-	}
-
-	// 6. Final Database Update
-	if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
+                // 4) Enforce "accepting-block-level" booking:
+                // Check FIRST, before writing accepting_block_hash for this record, otherwise we match ourselves.
+                alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWallet(origRecord.WalletAddress, acceptingBlockHash)
+                if err != nil {
+	                log.Printf("Error checking accepting booking for wallet %s accepting %s: %v", origRecord.WalletAddress, acceptingBlockHash, err)
+	                continue
+                }
+                
+                // Persist the accepting block hash for UI/debugging in both paths (booked and duplicate).
+                if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
+	                log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
+	                // Not fatal; continue with reward logic.
+                }
+                
+                if alreadyBooked {
+	                // This mined block maps to an accepting block we've already processed.
+	                // Keep it "blue-ish" but zero reward.
+	                status = "merge_duplicate"
+	                reward = 0
+	                break
+                }
+                
+                // 5) Fetch accepting block with transactions and sum coinbase outputs paying our wallet.
+                acceptingBlock, err := sh.hoosat.GetBlock(acceptingBlockHash, true)
+                if err != nil || acceptingBlock == nil || acceptingBlock.Block == nil {
+	                continue
+                }
+                
+                ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
+                if !ok || totalAmount == 0 {
+	                if attempt >= minAttemptsBeforeLogging {
+		                log.Printf("Block %s: no coinbase output for wallet %s in accepting block %s", blockHash, origRecord.WalletAddress, acceptingBlockHash)
+	                }
+	                continue
+                }
+                
+                reward = totalAmount
+                status = "blue"
+                break
+	                }
+                
+	       // Final DB update (even if red/merge_duplicate)
+	       if err := sh.miningDB.UpdateReward(blockHash, reward, status); err != nil {
 		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}
 }

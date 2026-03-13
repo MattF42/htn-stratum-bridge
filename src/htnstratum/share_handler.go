@@ -478,7 +478,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 			Timestamp:     time.Now().UnixMilli(),
 			BlockHash:     blockHash,
 			WalletAddress: walletAddr,
-			WorkerName:    ctx.WorkerName,
+			WorkerName:    stats.WorkerName,
 			RewardAtoms:   0,
 			Status:        "pending",
 		}

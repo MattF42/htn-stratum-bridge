@@ -28,67 +28,53 @@ type MiningDB struct {
 	mu sync.Mutex
 }
 
-// InitDB opens (or creates) the SQLite database at the given file path,
-// creates the required schema, applies lightweight migrations, and returns a ready-to-use *MiningDB.
 func InitDB(path string) (*MiningDB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite db: %w", err)
 	}
 
-	// Enable WAL mode for better concurrent-read performance and reduce
-	// write-contention between the recording goroutine and web queries.
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("setting WAL mode: %w", err)
 	}
 
-	// Base schema (new installs).
-	// Note: accepting_block_hash is included here so new DBs have it immediately.
+	// 1) Create the base table (works for both new and existing DBs).
+	// Keep this compatible with old DBs: don't assume new columns are present.
 	schema := `
 CREATE TABLE IF NOT EXISTS block_rewards (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp           INTEGER NOT NULL,
-    block_hash          TEXT    NOT NULL UNIQUE,
-    wallet_address      TEXT    NOT NULL,
-    worker_name         TEXT    NOT NULL DEFAULT '',
-    reward_atoms        INTEGER NOT NULL DEFAULT 0,
-    status              TEXT DEFAULT 'pending',
-    accepting_block_hash TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp      INTEGER NOT NULL,
+    block_hash     TEXT    NOT NULL UNIQUE,
+    wallet_address TEXT    NOT NULL,
+    worker_name    TEXT    NOT NULL DEFAULT '',
+    reward_atoms   INTEGER NOT NULL DEFAULT 0,
+    status         TEXT DEFAULT 'pending'
 );
-
 CREATE INDEX IF NOT EXISTS idx_wallet ON block_rewards(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_timestamp ON block_rewards(timestamp);
-CREATE INDEX IF NOT EXISTS idx_accepting ON block_rewards(accepting_block_hash);
-
--- Enforce: for a given wallet, we only book payout once per accepting block.
--- This guarantees "only process first; mark others merge_duplicate" can be race-free.
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_wallet_accepting
-ON block_rewards(wallet_address, accepting_block_hash)
-WHERE accepting_block_hash IS NOT NULL AND accepting_block_hash != '';
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
-	// Lightweight migration for existing DBs that were created before accepting_block_hash existed.
-	// If column already exists, SQLite will error; we ignore that specific case.
+	// 2) Migration: add accepting_block_hash if missing.
 	if _, err := db.Exec(`ALTER TABLE block_rewards ADD COLUMN accepting_block_hash TEXT`); err != nil {
-		// modernc sqlite typically returns "duplicate column name" when already present.
-		// We treat that as OK.
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") &&
-			!strings.Contains(strings.ToLower(err.Error()), "already exists") {
+		msg := strings.ToLower(err.Error())
+		if !strings.Contains(msg, "duplicate column name") &&
+			!strings.Contains(msg, "already exists") {
 			db.Close()
 			return nil, fmt.Errorf("migrating schema (accepting_block_hash): %w", err)
 		}
 	}
 
-	// Ensure indexes exist on upgraded DBs too.
+	// 3) Now it is safe to create indexes referencing accepting_block_hash.
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accepting ON block_rewards(accepting_block_hash)`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("creating idx_accepting: %w", err)
 	}
+
 	if _, err := db.Exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_wallet_accepting
 ON block_rewards(wallet_address, accepting_block_hash)

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
@@ -448,6 +447,7 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 	// Persist the found block to the mining database.
 	if sh.miningDB != nil {
+		/*
 		walletAddr := ctx.WalletAddr // Default to the miner who submitted the share
 
 		// PHYSICAL TRUTH: Identify the owner from the Hex-Encoded Coinbase Payload.
@@ -472,12 +472,13 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 				}
 			}
 		}
+		*/
 
 		// Record the block to the database using the physically identified wallet.
 		record := BlockRecord{
 			Timestamp:     time.Now().UnixMilli(),
 			BlockHash:     blockHash,
-			WalletAddress: walletAddr,
+			WalletAddress: ctx.WalletAddr,
 			WorkerName:    stats.WorkerName,
 			RewardAtoms:   0,
 			Status:        "pending",

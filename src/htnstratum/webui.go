@@ -288,16 +288,13 @@ var _offset = 0;
 function changePage(dir) {
   var newOffset = _offset + dir * _pageSize;
 
-  // If we're already on the first page and asked to go back, do nothing.
-  if (newOffset <= 0 && dir < 0) {
-    newOffset = 0;
-    if (_offset === 0) {
-      return; // already on page 1, don't refetch
-    }
-  }
-
   if (newOffset < 0) newOffset = 0;
-  if (newOffset >= _total) return;
+
+  // If we're already on this page, don't refetch.
+  if (newOffset === _offset) return;
+
+  // Only prevent "Next" from going out of range. "Previous" is always OK if newOffset >= 0.
+  if (dir > 0 && newOffset >= _total) return;
 
   fetchPage(newOffset);
 }

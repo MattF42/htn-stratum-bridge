@@ -126,6 +126,24 @@ func (d *MiningDB) SetAcceptingBlockHash(blockHash, acceptingBlockHash string) e
 	return err
 }
 
+// HasAcceptingBlockForWalletExcluding returns true if some OTHER row already exists for (wallet, acceptingBlockHash).
+func (d *MiningDB) HasAcceptingBlockForWalletExcluding(walletAddr, acceptingBlockHash, excludeBlockHash string) (bool, error) {
+	var one int
+	err := d.db.QueryRow(
+		`SELECT 1
+		   FROM block_rewards
+		  WHERE wallet_address = ?
+		    AND accepting_block_hash = ?
+		    AND block_hash != ?
+		  LIMIT 1`,
+		walletAddr, acceptingBlockHash, excludeBlockHash,
+	).Scan(&one)
+
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return err == nil, err
+}
 // HasAcceptingBlockForWallet returns true if we already booked something for (wallet, acceptingBlockHash).
 // This is used to enforce "process only the first block that maps to an accepting block" semantics.
 func (d *MiningDB) HasAcceptingBlockForWallet(walletAddr, acceptingBlockHash string) (bool, error) {

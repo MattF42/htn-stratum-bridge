@@ -598,12 +598,12 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		
 		// 4) Enforce "accepting-block-level" booking:
 		// Check FIRST, before writing accepting_block_hash for this record, otherwise we match ourselves.
-		alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWallet(origRecord.WalletAddress, acceptingBlockHash)
-		if err != nil {
-			log.Printf("Error checking accepting booking for wallet %s accepting %s: %v", origRecord.WalletAddress, acceptingBlockHash, err)
-			continue
-		}
-		
+	        alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWalletExcluding(
+			origRecord.WalletAddress,
+			acceptingBlockHash,
+			blockHash,
+		)
+	
 		// Persist the accepting block hash for UI/debugging in both paths (booked and duplicate).
 		if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
 			log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)

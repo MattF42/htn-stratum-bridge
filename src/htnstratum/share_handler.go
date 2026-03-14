@@ -617,6 +617,10 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			// C) If we found a payment but it was already booked by another record, 
 			// mark this block as a merge duplicate and stop.
 			if alreadyBooked {
+				// STILL RECORD IT, so we can trace....
+			         if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
+				         log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
+			         }
 				status = "merge_duplicate"
 				reward = 0
 				foundPayment = true

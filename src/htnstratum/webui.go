@@ -245,7 +245,6 @@ function copyToClipboard() {
 </div>
 {{end}}
 
-{{if .Blocks}}
 <h3>Block History</h3>
 <div id="block-history">
 <table>
@@ -255,7 +254,7 @@ function copyToClipboard() {
   <th>Time (UTC)</th>
   <th>Block Hash</th>
   <th>Worker</th>
-  <th>Status</th>  
+  <th>Status</th>
   <th>Reward</th>
 </tr>
 </thead>
@@ -266,9 +265,9 @@ function copyToClipboard() {
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>  
+  <td>
     {{if eq $b.Status "blue"}}
-      <span style="color: RoyalBlue;">Blue</span>
+      <span style="color: DodgerBlue;">Blue</span>
     {{else if eq $b.Status "red"}}
       <span style="color: IndianRed;">Red</span>
     {{else if eq $b.Status "merge_duplicate"}}
@@ -277,11 +276,15 @@ function copyToClipboard() {
       <span class="badge-pending">Pending</span>
     {{end}}
   </td>
-  <td>{{fmtAtoms $b.RewardAtoms}}</td>  <!-- Simplified Reward Column -->
+  <td>{{fmtAtoms $b.RewardAtoms}}</td>
 </tr>
+{{end}}
+{{if not .Blocks}}
+<tr><td colspan="6" style="text-align:center;color:#aaa">No blocks found for this address yet.</td></tr>
 {{end}}
 </tbody>
 </table>
+{{if .Blocks}}
 <div class="pagination">
   <button id="btn-first" onclick="changePage('first')" disabled>First</button>
   <button id="btn-prev" onclick="changePage(-1)" disabled>← Previous</button>
@@ -289,11 +292,8 @@ function copyToClipboard() {
   <button id="btn-next" onclick="changePage(1)" disabled>Next →</button>
   <button id="btn-last" onclick="changePage('last')" disabled>Last</button>
 </div>
-</div>
-{{else}}
-<p>No blocks found for this address yet.</p>
-</div>
 {{end}}
+</div>
 <script>
 // _addr is JS-escaped by html/template's contextual escaping (safe against XSS)
 var _addr = "{{.Address}}";
@@ -354,7 +354,7 @@ function renderTable(blocks) {
     // Status cell
     var statusCell;
     if (b.Status === 'blue') {
-      statusCell = '<span style="color: RoyalBlue;">Blue</span>';
+      statusCell = '<span style="color: DodgerBlue;">Blue</span>';
     } else if (b.Status === 'red') {
       statusCell = '<span style="color: IndianRed;">Red</span>';
     } else if (b.Status === 'merge_duplicate') {

@@ -566,12 +566,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		if br.Block.VerboseData != nil && br.Block.VerboseData.IsChainBlock {
-            		status = "blue"
-        	} else {
-            		status = "red"
-        	}
-
 		// 2) Fetch the Virtual Selected Parent Chain starting from our block.
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
 		if err != nil || chainInfo == nil {
@@ -592,6 +586,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			ok, reward := coinbaseSumToAddress(br.Block, origRecord.WalletAddress)
 			if ok && reward > 0 {
 				// Update DB
+				status = "blue"
 				err = sh.miningDB.UpdateReward(blockHash, reward, status)
 				if err != nil {
 					log.Printf("Failed to update immediate reward for %s: %v", blockHash, err)
@@ -655,6 +650,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 				log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
 			}
 
+			status = "blue"
 			reward = totalAmount
 			foundPayment = true
 			break

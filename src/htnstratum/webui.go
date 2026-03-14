@@ -72,7 +72,7 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 </head>
 <body>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor 0.5% Pool Fee<BR>
+<h5>By Foztor {{printf "%.1f" .FeePercent}}% Pool Fee<BR>
 Pool fee is collected by randomly selecting jobs to mine to the pool wallet address<BR>
 All blocks that turn blue are instantly available in your wallet<BR>
 They are directly mined by you</h5>
@@ -165,7 +165,7 @@ var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 <body>
 <div id="refresh-overlay"><div class="refresh-box">⟳ Refreshing…</div></div>
 <h1>HTN Solo Mining Pool</h1>
-<h5>By Foztor - 0.5% Pool Fee<BR><span id="reload-countdown">Data reload in 30 seconds</span></h5>
+<h5>By Foztor - {{printf "%.1f" .FeePercent}}% Pool Fee<BR><span id="reload-countdown">Data reload in 30 seconds</span></h5>
 <div class="back"><a href="/">← Change Wallet</a></div>
 <h2><span class="addr">Stats for: {{.Address}}</span> <span id="copyIcon" onclick="copyToClipboard('{{.Address}}')" style="cursor: pointer; margin-left: 5px;" title="Copy to clipboard">⧉</span></h2>
 <div id="ping" style="position: fixed; top: 10px; right: 10px; background: #1a1a2e; color: #eee; padding: 5px; border-radius: 4px;">Ping: -- ms</div>
@@ -255,6 +255,7 @@ function copyToClipboard() {
   <th>Time (UTC)</th>
   <th>Block Hash</th>
   <th>Worker</th>
+  <th>Status</th>  
   <th>Reward</th>
 </tr>
 </thead>
@@ -265,29 +266,33 @@ function copyToClipboard() {
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>
-  {{if eq $b.Status "blue"}}
-    <span style="color: green;">{{fmtAtoms $b.RewardAtoms}}</span>
-  {{else if eq $b.Status "merge_duplicate"}}
-    <span style="color: blue;">Merge Duplicate</span>
-  {{else if eq $b.Status "red"}}
-    <span style="color: OrangeRed;">{{fmtAtoms $b.RewardAtoms}}</span>
-  {{else}}
-    <span class="badge-pending">Pending</span>
-  {{end}}
-</td>
+  <td>  
+    {{if eq $b.Status "blue"}}
+      <span style="color: RoyalBlue;">Blue</span>
+    {{else if eq $b.Status "red"}}
+      <span style="color: IndianRed;">Red</span>
+    {{else if eq $b.Status "merge_duplicate"}}
+      <span style="color: cyan;">Merge Duplicate</span>
+    {{else}}
+      <span class="badge-pending">Pending</span>
+    {{end}}
+  </td>
+  <td>{{fmtAtoms $b.RewardAtoms}}</td>  <!-- Simplified Reward Column -->
 </tr>
 {{end}}
 </tbody>
 </table>
 <div class="pagination">
+  <button id="btn-first" onclick="changePage('first')" disabled>First</button>
   <button id="btn-prev" onclick="changePage(-1)" disabled>← Previous</button>
   <span class="page-info" id="page-info">Page 1</span>
-  <button id="btn-next" onclick="changePage(1)" {{if le .TotalBlocks 20}}disabled{{end}}>Next →</button>
+  <button id="btn-next" onclick="changePage(1)" disabled>Next →</button>
+  <button id="btn-last" onclick="changePage('last')" disabled>Last</button>
 </div>
 </div>
 {{else}}
 <p>No blocks found for this address yet.</p>
+</div>
 {{end}}
 <script>
 // _addr is JS-escaped by html/template's contextual escaping (safe against XSS)
@@ -297,15 +302,20 @@ var _pageSize = 20;
 var _offset = 0;
 
 function changePage(dir) {
-  var newOffset = _offset + dir * _pageSize;
+  var newOffset;
+  if (dir === 'first') {
+    newOffset = 0;
+  } else if (dir === 'last') {
+    var totalPages = Math.ceil(_total / _pageSize) || 1;
+    newOffset = Math.max(0, (totalPages - 1) * _pageSize);
+  } else {
+    newOffset = _offset + dir * _pageSize;
+  }
 
   if (newOffset < 0) newOffset = 0;
+  if (dir > 0 && newOffset >= _total && dir !== 'last') return;  // Prevent invalid next
 
-  // If we're already on this page, don't refetch.
-  if (newOffset === _offset) return;
-
-  // Only prevent "Next" from going out of range. "Previous" is always OK if newOffset >= 0.
-  if (dir > 0 && newOffset >= _total) return;
+  if (newOffset === _offset) return;  // No change
 
   fetchPage(newOffset);
 }
@@ -341,38 +351,32 @@ function renderTable(blocks) {
   var html = '';
   for (var i = 0; i < blocks.length; i++) {
     var b = blocks[i];
-    // console.log("status is " + b.status + " or " + b.Status);
-    var rewardCell;
-    // var nowMs = Date.now();
-    // Timestamp is Unix milliseconds; blocks older than 10 min with no reward are orphaned
-    // var ageMin = (nowMs - b.Timestamp) / 60000;
+    // Status cell
+    var statusCell;
     if (b.Status === 'blue') {
-    rewardCell = '<span style="color: green;">' + fmtAtoms(b.RewardAtoms) + '</span>';
+      statusCell = '<span style="color: RoyalBlue;">Blue</span>';
+    } else if (b.Status === 'red') {
+      statusCell = '<span style="color: IndianRed;">Red</span>';
     } else if (b.Status === 'merge_duplicate') {
-      // Merge duplicate is "blue-ish" but has no additional payout attributable to this block.
-      rewardCell = '<span style="color: cyan;">Merge Duplicate</span>';
-  } else if (b.Status === 'red') {
-    rewardCell = '<span style="color: OrangeRed;">' + fmtAtoms(b.RewardAtoms) + '</span>';
-  } else {
-    // For pending, check if stale (older than 10 min)
-    // var nowMs = Date.now();
-    // var ageMin = (nowMs - b.Timestamp) / 60000;
-    // if (ageMin > 10) {
-	    // rewardCell = '<span style="color: red;">RED BLOCK</span>';
-    // } else {
-      rewardCell = '<span class="badge-pending">Pending</span>';
-    // }
-  }
+      statusCell = '<span style="color: cyan;">Merge Duplicate</span>';
+    } else {
+      statusCell = '<span class="badge-pending">Pending</span>';
+    }
+
+    // Reward cell: just the atoms (0 for no reward)
+    var rewardCell = fmtAtoms(b.RewardAtoms);
+
     // Show first 8 and last 8 chars for hashes longer than 16 chars (matches server-side shortHash)
     var shortH = b.BlockHash.length > 16 ? b.BlockHash.slice(0,8) + '\u2026' + b.BlockHash.slice(-8) : b.BlockHash;
     var tStr = b.Timestamp ? new Date(b.Timestamp).toISOString().replace('T',' ').replace(/\..+/,' UTC') : '\u2013';
-    html += '<tr>' +
+      html += '<tr>' +
       '<td>' + b.ID + '</td>' +
       '<td>' + tStr + '</td>' +
       '<td title="' + escHtml(b.BlockHash) + '">' + escHtml(shortH) +
         '<button class="copy-btn" data-hash="' + escHtml(b.BlockHash) + '" onclick="copyHash(this)" title="Copy full hash">\u29C9</button></td>' +
       '<td>' + escHtml(b.WorkerName) + '</td>' +
-      '<td>' + rewardCell + '</td>' +
+      '<td>' + statusCell + '</td>' +  // New
+      '<td>' + rewardCell + '</td>' +  // Simplified
       '</tr>';
   }
   tbody.innerHTML = html;
@@ -387,11 +391,24 @@ function escHtml(s) {
 }
 
 function updatePagination() {
+  var pageInfoEl = document.getElementById('page-info');
+  var btnFirst = document.getElementById('btn-first');
+  var btnPrev = document.getElementById('btn-prev');
+  var btnNext = document.getElementById('btn-next');
+  var btnLast = document.getElementById('btn-last');
+  
+  // If no block history, skip (no blocks yet)
+  if (!pageInfoEl || !btnFirst || !btnPrev || !btnNext || !btnLast) return;
+  
   var page = Math.floor(_offset / _pageSize) + 1;
   var totalPages = Math.ceil(_total / _pageSize) || 1;
-  document.getElementById('page-info').textContent = 'Page ' + page + ' of ' + totalPages;
-  document.getElementById('btn-prev').disabled = _offset <= 0;
-  document.getElementById('btn-next').disabled = _offset + _pageSize >= _total;
+  pageInfoEl.textContent = 'Page ' + page + ' of ' + totalPages;
+  var isFirstPage = _offset <= 0;
+  var isLastPage = _offset + _pageSize >= _total;
+  btnFirst.disabled = isFirstPage;
+  btnPrev.disabled = isFirstPage;
+  btnNext.disabled = isLastPage;
+  btnLast.disabled = isLastPage;
 }
 
 function copyHash(btn) {
@@ -553,9 +570,9 @@ function _refreshStats() {
     .then(function(data) { _applyStats(data); })
     .catch(function(err) { console.error('stats refresh error', err); });
 
-  // Reset block history to page 1
-  var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) +
-                 '&limit=' + _pageSize + '&offset=0')
+  // Keep block history where it is unless page 1 and then refresh
+   var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) +
+               '&limit=' + _pageSize + '&offset=' + _offset)  // Use _offset instead of 0
     .then(function(r) {
       var ct = r.headers.get('Content-Type') || '';
       if (!ct.includes('application/json')) {
@@ -567,12 +584,6 @@ function _refreshStats() {
         });
       }
       return r.json();
-    })
-    .then(function(data) {
-      _offset = 0;
-      _total = data.total;
-      renderTable(data.blocks);
-      updatePagination();
     })
     .catch(function(err) { console.error('blocks refresh error', err); });
 
@@ -700,9 +711,6 @@ function closeWorkerBlockModal() {
   document.getElementById('wbs-modal').classList.remove('open');
 }
 
-document.getElementById('wbs-modal').addEventListener('click', function(e) {
-  if (e.target === this) { closeWorkerBlockModal(); }
-});
 
 function fetchWorkerBlockStats() {
   var tbody = document.getElementById('wbs-tbody');
@@ -741,6 +749,11 @@ function fetchWorkerBlockStats() {
     </table>
   </div>
 </div>
+<script>
+document.getElementById('wbs-modal').addEventListener('click', function(e) {
+  if (e.target === this) { closeWorkerBlockModal(); }
+});
+</script>
 </body>
 </html>`))
 
@@ -762,27 +775,33 @@ type statsPageData struct {
         TotalTwentyFourHrGHs float64
         TotalBlocksFound     int64
 	NetHash float64
+	FeePercent float64
 }
 
 // StartWebUI registers HTTP handlers and starts the web UI server on the given
 // port (e.g. ":8080").  It is non-blocking: the listener runs in a goroutine.
 // sh may be nil if no share handler has been created yet (workers section will
 // simply be omitted from the stats page).
-func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string) {
+func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string, feePPM int) {
+        feePercent := float64(feePPM) / 100.0  // Convert PPM to percentage (e.g., 50 -> 0.5)
+
 	mux := http.NewServeMux()
 
-	// GET / — wallet address input form
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		data := struct{ StratumAddr string }{StratumAddr: stratumAddr}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := indexTmpl.Execute(w, data); err != nil {
-			logger.Warn("webui: index template error", zap.Error(err))
-		}
-	})
+        // GET / — wallet address input form
+    	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        	if r.URL.Path != "/" {
+            	http.NotFound(w, r)
+            	return
+        	}
+        	data := struct {
+            	StratumAddr string
+            	FeePercent  float64
+        	}{StratumAddr: stratumAddr, FeePercent: feePercent}
+        	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+        	if err := indexTmpl.Execute(w, data); err != nil {
+            	logger.Warn("webui: index template error", zap.Error(err))
+        	}
+    	})
 
 	// GET /stats?address=<addr>&limit=<n> — HTML stats page
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
@@ -847,6 +866,7 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
                         TotalTwentyFourHrGHs: total24Hr,
                         TotalBlocksFound:     alltotalBlocks,
 			NetHash: netHash,
+                        FeePercent:           feePercent, 
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {

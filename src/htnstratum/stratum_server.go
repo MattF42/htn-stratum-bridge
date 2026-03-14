@@ -130,7 +130,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 	// Start the miner stats web UI if a port is configured.  We pass the
 	// shareHandler so that the /stats page can display live worker stats.
 	if cfg.WebPort != "" && cfg.StratumAddr != "" {
-		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr)
+		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr, cfg.BridgeFee.RatePpm)
 		// Recover pending rewards on startup
 		rows, err := miningDB.db.Query("SELECT block_hash FROM block_rewards WHERE status == 'pending'")
 		if err != nil {

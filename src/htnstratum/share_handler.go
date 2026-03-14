@@ -566,6 +566,12 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
+		if br.Block.VerboseData != nil && br.Block.VerboseData.IsChainBlock {
+            		status = "blue"
+        	} else {
+            		status = "red"
+        	}
+
 		// 2) Fetch the Virtual Selected Parent Chain starting from our block.
 		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
 		if err != nil || chainInfo == nil {
@@ -586,7 +592,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			ok, reward := coinbaseSumToAddress(br.Block, origRecord.WalletAddress)
 			if ok && reward > 0 {
 				// Update DB
-				err = sh.miningDB.UpdateReward(blockHash, reward, "blue")
+				err = sh.miningDB.UpdateReward(blockHash, reward, status)
 				if err != nil {
 					log.Printf("Failed to update immediate reward for %s: %v", blockHash, err)
 				} else {
@@ -638,10 +644,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			// C) If we found a payment but it was already booked by another record, 
 			// mark this block as a merge duplicate and stop.
 			if alreadyBooked {
-				// STILL RECORD IT, so we can trace....
-				if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
-					log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
-				}
 				status = "merge_duplicate"
 				reward = 0
 				foundPayment = true
@@ -654,7 +656,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			}
 
 			reward = totalAmount
-			status = "blue"
 			foundPayment = true
 			break
 		}

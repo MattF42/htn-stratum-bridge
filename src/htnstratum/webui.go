@@ -199,7 +199,7 @@ function copyToClipboard() {
 <div class="summary">
 <div class="card">
   <div class="label">Lifetime Blocks</div>
-  <div class="value" id="lifetime-blocks-value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: red;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
+  <div class="value" id="lifetime-blocks-value">Blue: <span style="color: green;">{{.Blue}}</span> / Red: <span style="color: OrangeRed;">{{.Red}}</span> / Pending: <span style="color: orange;">{{.Pending}}</span> ({{printf "%.1f" .BluePercent}}%)</div>
 </div>
   <div class="card">
     <div class="label">Lifetime Mined</div>
@@ -271,7 +271,7 @@ function copyToClipboard() {
   {{else if eq $b.Status "merge_duplicate"}}
     <span style="color: blue;">Merge Duplicate</span>
   {{else if eq $b.Status "red"}}
-    <span style="color: red;">RED BLOCK</span>
+    <span style="color: OrangeRed;">{{fmtAtoms $b.RewardAtoms}}</span>
   {{else}}
     <span class="badge-pending">Pending</span>
   {{end}}
@@ -352,7 +352,7 @@ function renderTable(blocks) {
       // Merge duplicate is "blue-ish" but has no additional payout attributable to this block.
       rewardCell = '<span style="color: cyan;">Merge Duplicate</span>';
   } else if (b.Status === 'red') {
-    rewardCell = '<span style="color: red;">RED BLOCK</span>';
+    rewardCell = '<span style="color: OrangeRed;">' + fmtAtoms(b.RewardAtoms) + '</span>';
   } else {
     // For pending, check if stale (older than 10 min)
     // var nowMs = Date.now();

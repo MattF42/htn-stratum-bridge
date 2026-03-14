@@ -212,7 +212,7 @@ function copyToClipboard() {
 </div>
 {{if .LiveWorkers}}
 <div id="workers-section">
-<h3>Current Workers → <a href="javascript:void(0)" onclick="openWorkerBlockModal()" class="wbs-link">Historical Per Worker Stats</a> ←</h3>
+<h3>Live Workers (since restart)  → <a href="javascript:void(0)" onclick="openWorkerBlockModal()" class="wbs-link">Lifetime Per Worker Stats</a> </h3>
 <table>
 <thead>
 <tr>

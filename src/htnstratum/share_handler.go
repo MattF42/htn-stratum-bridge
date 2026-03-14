@@ -557,7 +557,7 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			time.Sleep(retryDelay)
 		}
 
-		// 1) Confirm our mined block is known and is a Chain Block.
+		// 1) Confirm our mined block is known.
 		br, err := sh.hoosat.GetBlock(blockHash, true)
 		if err != nil || br == nil || br.Block == nil {
 			if attempt >= minAttemptsBeforeLogging {
@@ -566,15 +566,38 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		if br.Block.VerboseData == nil || !br.Block.VerboseData.IsChainBlock {
-			status = "red"
+		// 2) Fetch the Virtual Selected Parent Chain starting from our block.
+		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
+		if err != nil || chainInfo == nil {
 			continue
 		}
 
-		// 2) Fetch the Virtual Selected Parent Chain starting from our block.
-		chainInfo, err := sh.hoosat.GetVirtualSelectedParentChainFromBlock(blockHash, false)
-		if err != nil || chainInfo == nil || len(chainInfo.AddedChainBlockHashes) == 0 {
-			continue
+		// 2a) Check the mined block itself for immediate reward (if no added chain blocks)
+		if len(chainInfo.AddedChainBlockHashes) == 0 {
+			// Fetch the block (already have br)
+			// Load record
+			origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
+			if dbErr != nil || origRecord == nil {
+				log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
+				continue
+			}
+			
+			// Check coinbase
+			ok, reward := coinbaseSumToAddress(br.Block, origRecord.WalletAddress)
+			if ok && reward > 0 {
+				// Update DB
+				err = sh.miningDB.UpdateReward(blockHash, reward, "blue")
+				if err != nil {
+					log.Printf("Failed to update immediate reward for %s: %v", blockHash, err)
+				} else {
+					err = sh.miningDB.SetAcceptingBlockHash(blockHash, blockHash)
+					if err != nil {
+						log.Printf("Failed to set accepting hash for immediate reward %s: %v", blockHash, err)
+					}
+				}
+				return // Done
+			}
+			continue // No reward found
 		}
 
 		// 3) Load our original record to get the wallet address.
@@ -585,8 +608,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		}
 
 		// 4) Walk the Chain: Scan through the added blocks to find the actual payor.
-		// In GHOSTDAG, the reward for a block usually appears 1 or 2 blocks later 
-		// in the Selected Parent Chain (the "Maturity Offset").
 		foundPayment := false
 		for _, acceptingBlockHash := range chainInfo.AddedChainBlockHashes {
 			
@@ -618,9 +639,9 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			// mark this block as a merge duplicate and stop.
 			if alreadyBooked {
 				// STILL RECORD IT, so we can trace....
-			         if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
-				         log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
-			         }
+				if err := sh.miningDB.SetAcceptingBlockHash(blockHash, acceptingBlockHash); err != nil {
+					log.Printf("Error setting accepting_block_hash for %s -> %s: %v", blockHash, acceptingBlockHash, err)
+				}
 				status = "merge_duplicate"
 				reward = 0
 				foundPayment = true

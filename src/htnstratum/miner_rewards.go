@@ -377,9 +377,6 @@ func logInfo(api *HtnApi, msg string) {
 	}
 }
 
-// coinbaseSumToAddress scans the coinbase (transactions[0]) and sums outputs
-// that pay the given Bech32 address (case-insensitive, HRP "hoosat:" / "hoosattest:" tolerated).
-// Returns (true, sum) if at least one output matches; otherwise (false, 0).
 func coinbaseSumToAddress(block *appmessage.RPCBlock, addr string) (bool, uint64) {
 	if block == nil || len(block.Transactions) == 0 || block.Transactions[0] == nil {
 		return false, 0

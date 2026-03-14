@@ -744,7 +744,7 @@ func (sh *shareHandler) startStatsThread() error {
 		str += "\n------------------------------------------------------------------------------------------------------------------------\n"
 		str += " Est. Network Hashrate: " + stringifyHashrate(DiffToHash(sh.soloDiff)*bps) + "\n"
 		str += " Mining difficulty:     " + fmt.Sprintf("%f", sh.soloDiff)
-		str += "\n========================================================================================== htn_bridge_" + version + " ===========\n"
+		str += "\n========================================================================================== htn_bridge_" + version + " \n"
 		sh.statsLock.Unlock()
 		log.Println(str)
 	}
@@ -943,7 +943,7 @@ func (sh *shareHandler) startVardiffThread(expectedShareRate uint, logStats bool
 		}
 		sort.Strings(statsLines)
 		stats += strings.Join(statsLines, "\n")
-		stats += "\n\n======================================================== htn_bridge_" + version + " ===\n"
+		stats += "\n\n======================================================== htn_bridge_" + version + " \n"
 		stats += strings.Join(toleranceErrs, "\n")
 		if logStats {
 			log.Println(stats)

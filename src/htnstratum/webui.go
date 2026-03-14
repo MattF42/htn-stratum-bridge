@@ -284,15 +284,13 @@ function copyToClipboard() {
 {{end}}
 </tbody>
 </table>
-{{if .Blocks}}
-<div class="pagination">
+<div class="pagination" id="pagination-controls">
   <button id="btn-first" onclick="changePage('first')" disabled>First</button>
   <button id="btn-prev" onclick="changePage(-1)" disabled>← Previous</button>
   <span class="page-info" id="page-info">Page 1</span>
   <button id="btn-next" onclick="changePage(1)" disabled>Next →</button>
   <button id="btn-last" onclick="changePage('last')" disabled>Last</button>
 </div>
-{{end}}
 </div>
 <script>
 // _addr is JS-escaped by html/template's contextual escaping (safe against XSS)
@@ -391,14 +389,19 @@ function escHtml(s) {
 }
 
 function updatePagination() {
+  var paginationEl = document.getElementById('pagination-controls');
+  if (!paginationEl) return;
+  if (_total <= _pageSize) {
+    paginationEl.style.display = 'none';
+    return;
+  } else {
+    paginationEl.style.display = 'flex';
+  }
   var pageInfoEl = document.getElementById('page-info');
   var btnFirst = document.getElementById('btn-first');
   var btnPrev = document.getElementById('btn-prev');
   var btnNext = document.getElementById('btn-next');
   var btnLast = document.getElementById('btn-last');
-  
-  // If no block history, skip (no blocks yet)
-  if (!pageInfoEl || !btnFirst || !btnPrev || !btnNext || !btnLast) return;
   
   var page = Math.floor(_offset / _pageSize) + 1;
   var totalPages = Math.ceil(_total / _pageSize) || 1;
@@ -410,6 +413,7 @@ function updatePagination() {
   btnNext.disabled = isLastPage;
   btnLast.disabled = isLastPage;
 }
+
 
 function copyHash(btn) {
   const h = btn.getAttribute('data-hash');

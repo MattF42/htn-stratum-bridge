@@ -572,33 +572,10 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			continue
 		}
 
-		// 2a) Check the mined block itself for immediate reward (if no added chain blocks)
+		// 2a) Check the mined block itself to see if it's in the chain
 		if len(chainInfo.AddedChainBlockHashes) == 0 {
-			// Fetch the block (already have br)
-			// Load record
-			origRecord, dbErr := sh.miningDB.GetBlock(blockHash)
-			if dbErr != nil || origRecord == nil {
-				log.Printf("Error fetching record for %s from DB: %v", blockHash, dbErr)
-				continue
-			}
-			
-			// Check coinbase
-			ok, reward := coinbaseSumToAddress(br.Block, origRecord.WalletAddress)
-			if ok && reward > 0 {
-				// Update DB
-				status = "blue"
-				err = sh.miningDB.UpdateReward(blockHash, reward, status)
-				if err != nil {
-					log.Printf("Failed to update immediate reward for %s: %v", blockHash, err)
-				} else {
-					err = sh.miningDB.SetAcceptingBlockHash(blockHash, blockHash)
-					if err != nil {
-						log.Printf("Failed to set accepting hash for immediate reward %s: %v", blockHash, err)
-					}
-				}
-				return // Done
-			}
-			continue // No reward found
+			// Not merged by a future block yet.  We wait....
+			continue
 		}
 
 		// 3) Load our original record to get the wallet address.
@@ -630,6 +607,41 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 				continue
 			}
 
+
+			wasMergedAsBlue := false
+			wasMergedAsRed := false
+
+			// Check if it was accepted as a Blue block
+			for _, blueHash := range acceptingBlock.Block.VerboseData.MergeSetBluesHashes {
+				if blueHash == blockHash {
+					wasMergedAsBlue = true
+					break
+				}
+			}
+
+			// If not blue, check if it was explicitly rejected as a Red block
+			if !wasMergedAsBlue {
+				for _, redHash := range acceptingBlock.Block.VerboseData.MergeSetRedsHashes {
+					if redHash == blockHash {
+						wasMergedAsRed = true
+						break
+					}
+				}
+			}
+
+			if wasMergedAsRed {
+				// The network explicitly merged and rejected this block. 
+				// It will never be paid. Stop looking.
+				status = "red"
+				reward = 0
+				foundPayment = true 
+				break
+			}
+
+			if !wasMergedAsBlue {
+				// This chain block didn't merge our block at all. Keep walking the chain.
+				continue
+			}
 			ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
 			if !ok || totalAmount == 0 {
 				// Payment not found in this block's coinbase; keep walking the chain.

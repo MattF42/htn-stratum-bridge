@@ -565,36 +565,17 @@ function _refreshStats() {
   var start = Date.now();
   var MIN_VISIBLE_MS = 1200;
 
-  var p1 = fetch('/api/stats?address=' + encodeURIComponent(_addr))
-    .then(function(r) { return r.json(); })
-    .then(function(data) { _applyStats(data); })
-    .catch(function(err) { console.error('stats refresh error', err); });
-
-  // Keep block history where it is unless page 1 and then refresh
-   var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) +
-               '&limit=' + _pageSize + '&offset=' + _offset)  // Use _offset instead of 0
-    .then(function(r) {
-      var ct = r.headers.get('Content-Type') || '';
-      if (!ct.includes('application/json')) {
-        return r.text().then(function(text) {
-          console.error('blocks refresh error: non-JSON response from /api/blocks',
-                        'content-type=', ct,
-                        'body prefix=', text.slice(0, 120));
-          throw new Error('Non-JSON response');
-        });
-      }
-      return r.json();
-    })
-    .catch(function(err) { console.error('blocks refresh error', err); });
-
-  // Common completion logic: hide overlay + restart countdown
-  function finish() {
-    _hideOverlay();
-    _startCountdown();
-  }
+  var p1 = fetch('/api/stats?address=' + encodeURIComponent(_addr)).then(r => r.json());
+  var p2 = fetch('/api/blocks?address=' + encodeURIComponent(_addr) +
+               '&limit=' + _pageSize + '&offset=' + _offset).then(r => r.json());
 
   Promise.all([p1, p2])
-    .then(function() {
+    .then(function(results) {
+      _applyStats(results[0]);
+      var blocksData = results[1];
+      renderTable(blocksData.blocks);
+      _total = blocksData.total;
+      updatePagination();
       var elapsed = Date.now() - start;
       var remaining = MIN_VISIBLE_MS - elapsed;
       if (remaining > 0) {
@@ -603,8 +584,8 @@ function _refreshStats() {
         finish();
       }
     })
-    .catch(function() {
-      // Even on error, respect the minimum display time
+    .catch(function(err) {
+      console.error('refresh error', err);
       var elapsed = Date.now() - start;
       var remaining = MIN_VISIBLE_MS - elapsed;
       if (remaining > 0) {
@@ -614,6 +595,12 @@ function _refreshStats() {
       }
     });
 }
+
+function finish() {
+  _hideOverlay();
+  _startCountdown();
+}
+
 
 // Kick off first refresh shortly after page load
 setTimeout(function() {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/hex"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
@@ -640,12 +641,18 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 				// This chain block didn't merge our block at all. Keep walking the chain.
 				continue
 			}
+                        foundPayment = true 
+			
+                        // B2 If this fails, we have somehow failed to track the ownership of the block properly
 			ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
 			if !ok || totalAmount == 0 {
-				// Payment not found in this block's coinbase; keep walking the chain.
-				continue
+				log.Printf("Warning: Block %s was merged as BLUE by %s, but no payment found for wallet %s", 
+					blockHash, acceptingBlockHash, origRecord.WalletAddress)
+				status = "blue"
+				reward = 0
+				break
 			}
-
+ 
 			// C) If we found a payment but it was already booked by another record, 
 			// mark this block as a merge duplicate and stop.
 			if alreadyBooked {

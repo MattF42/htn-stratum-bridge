@@ -43,7 +43,10 @@ type HtnApi struct {
 	gbtCacheMu  sync.Mutex
         gbtCacheHits   uint64
         gbtCacheMisses uint64
+	nodeCallMu sync.Mutex
 }
+
+
 
 func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, bridgeFee BridgeFeeConfig, gbtCacheTTL time.Duration) (*HtnApi, error) {
 	client, err := rpcclient.NewRPCClient(address)
@@ -321,7 +324,9 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		htnApi.gbtCacheMu.Unlock()
 		atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
 
+		htnApi.nodeCallMu.Lock()
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+		htnApi.nodeCallMu.Unlock()
 		if err != nil {
 			return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
@@ -337,7 +342,9 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 	}
 
 	// For Fee Jobs (or when cache is disabled), always fetch fresh from the node.
+        htnApi.nodeCallMu.Lock()
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+	htnApi.nodeCallMu.Unlock()
 	if err != nil {
 		return nil, false, errors.Wrap(err, "failed fetching fresh block template from hoosat")
 	}

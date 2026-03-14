@@ -176,6 +176,11 @@ func ListenAndServe(cfg BridgeConfig) error {
 			if err := gostratum.HandleAuthorize(ctx, event); err != nil {
 				return err
 			}
+					// --- TEMPORARY DEBUG LOG ---
+			logger.Infof("Miner Authorized - IP: %s, Wallet: %s, WorkerName: %s",
+				ctx.RemoteAddr, ctx.WalletAddr, ctx.WorkerName)
+			// ---------------------------
+
 			clientHandler.shareHandler.getCreateStats(ctx)
 			return nil
 		}

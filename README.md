@@ -120,6 +120,10 @@ Example refresh.html referenced above:
 
 ```
 
+## Database persistence
+The WebUI will persist it's stats in mining.db
+Do NOT open this file with a WRITE lock whilst the bridge is running
+Opening it in readonly mode should be fine
 
 ## Manual build
 

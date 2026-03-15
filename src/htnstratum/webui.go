@@ -67,6 +67,11 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   button{margin-top:10px;padding:10px 24px;background:#0f3460;color:#eee;border:none;border-radius:4px;cursor:pointer;font-size:14px}
   button:hover{background:#00d4ff;color:#1a1a2e}
   .error{color:#ff6b6b;margin-top:8px}
+  table{width:100%;border-collapse:collapse;margin-top:24px}
+  th{background:#0f3460;padding:10px 12px;text-align:left;font-size:13px}
+  td{padding:8px 12px;border-bottom:1px solid #0f3460;font-size:13px}
+  tr:hover td{background:#16213e}
+  #pools-table{width:90%;margin:0 auto}  /* Center and 90% width */
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
@@ -84,6 +89,45 @@ They are directly mined by you</h5>
   <br>
   <button type="submit">View Stats</button>
 </form>
+
+<h3>Other Solo HTN Pools Like This One</h3>
+<table id="pools-table">
+<thead>
+<tr>
+  <th>Pool URL</th>
+  <th>Location</th>
+  <th>Operator</th>
+</tr>
+</thead>
+<tbody id="pools-tbody">
+<tr><td colspan="3">Loading pools...</td></tr>
+</tbody>
+</table>
+
+<script>
+fetch('https://htn-dl.foztor.net/pools.php')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok');
+    }
+    return response.json();
+  })
+  .then(data => {
+    let html = '';
+    data.forEach(pool => {
+      html += '<tr>' +
+        '<td><a href="' + pool.pool_url + '">' + pool.pool_url + '</a></td>' +
+        '<td>' + pool.location + '</td>' +
+        '<td>' + pool.operator + '</td>' +
+        '</tr>';
+    });
+    document.getElementById('pools-tbody').innerHTML = html;
+  })
+  .catch(error => {
+    console.error('Error fetching pools:', error);
+    document.getElementById('pools-tbody').innerHTML = '<tr><td colspan="3">Error loading pools.</td></tr>';
+  });
+</script>
 </body>
 </html>`))
 

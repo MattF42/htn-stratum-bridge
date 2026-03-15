@@ -1,16 +1,17 @@
-# Hoosat Stratum Adapter
+# Hoosat (HTN) Stratum Solo Mining Bridge in a Box
 
-This is a [forked](https://github.com/onemorebsmith/kaspa-stratum-bridge) lightweight daemon that allows mining to a local (or remote) hoosat node using stratum-base miners.
+This is a [forked](https://github.com/HoosatNetwork/htn-stratum-bridge) lightweight daemon that allows mining to a local (or remote) hoosat node using stratum-base miners.
 
-This daemon is confirmed working with the miners below in both dual-mining and hoosat-only modes (for those that support it) and Windows/MacOs/Linux/HiveOs.
-* [srbminer](https://github.com/doktor83/SRBMiner-Multi/releases/tag/2.4.4)
+This daemon is confirmed working with the miners below 
+* [hoo_cpu](https://htn.foztor.net/)
+* [hoo_gpu](https://htn.foztor.net/)
+* [hoo_gpu_amd](https://htn.foztor.net/)
+* [hoo_cpu_arm](https://htn.foztor.net/)
+* [hoodroid](https://htn.foztor.net/)
+* [Hoominer](https://github.com/HoosatNetwork/hoominer/releases)
 
-Huge shoutout to https://github.com/onemorebsmith/kaspa-stratum-bridgev and https://github.com/KaffinPX/KStratum for the work
-Tips appreciated: `kaspa:qp9v6090sr8jjlkq7r3f4h9un5rtfhu3raknfg3cca9eapzee57jzew0kxwlp`
-
-
-## Hive Setup
-[detailed instructions here](hive-setup.md) 
+Huge shoutout to https://github.com/HoosatNetwork/htn-stratum-bridge and
+https://github.com/onemorebsmith/kaspa-stratum-bridgev and https://github.com/KaffinPX/KStratum for the work
 
 
 # Features:
@@ -33,7 +34,7 @@ Add to your `config.yaml`:
 bridge_fee:
   enabled: false              # Set to true to enable (default: false)
   rate_ppm: 50               # Parts per 10000 (50 = 0.5%, 100 = 1%, 500 = 5%)
-  address: "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+  address: "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz" # Replace with your own fee wallet.  Obviously....
   server_salt: ""            # REQUIRED: Set a random secret for production
 ```
 
@@ -42,83 +43,70 @@ bridge_fee:
 - Without a server salt, the feature remains disabled even if `enabled: true`
 - Default rate is 0.5% (50 ppm) when enabled
 
-Shares-based work allocation with miner-like periodic stat output:
+## WebUI (Optional)
 
-![image](https://user-images.githubusercontent.com/59971111/191983487-479e19ec-a8cb-4edb-afc4-55a1165e79fc.png)
-
-
-
-Optional monitoring UI:
-
-https://github.com/Hoosat-Oy/htn-stratum-bridge/blob/main/monitoring-setup.md
-
-![image](https://user-images.githubusercontent.com/59971111/192025446-f20d74a5-f9e0-4290-b98b-9f56af8f23b4.png)
-
-![image](https://user-images.githubusercontent.com/59971111/191980688-2d0faf6b-d551-4880-a316-de2303cfeb7d.png)
-
-
-Prometheus API:
-
-If the app is run with the `-prom={port}` flag the application will host stats on the port specified by `{port}`, these stats are documented in the file [prom.go](src/htnstratum/prom.go). This is intended to be use by prometheus but the stats can be fetched and used independently if desired. `curl http://localhost:2114/metrics | grep htn_` will get a listing of current stats. All published stats have a `htn_` prefix for ease of use.
-
-```
-user:~$ curl http://localhost:2114/metrics | grep htn_
-# HELP htn_estimated_network_hashrate_gauge Gauge representing the estimated network hashrate
-# TYPE htn_estimated_network_hashrate_gauge gauge
-htn_estimated_network_hashrate_gauge 2.43428982879776e+14
-# HELP htn_network_block_count Gauge representing the network block count
-# TYPE htn_network_block_count gauge
-htn_network_block_count 271966
-# HELP htn_network_difficulty_gauge Gauge representing the network difficulty
-# TYPE htn_network_difficulty_gauge gauge
-htn_network_difficulty_gauge 1.2526479386202519e+14
-# HELP htn_valid_share_counter Number of shares found by worker over time
-# TYPE htn_valid_share_counter counter
-htn_valid_share_counter{ip="192.168.0.17",miner="SRBMiner-MULTI/2.4.4",wallet="hoosat:qzk3uh2twkhu0fmuq50mdy3r2yzuwqvstq745hxs7tet25hfd4egcafcdmpdl",worker="002"} 276
-# HELP htn_worker_job_counter Number of jobs sent to the miner by worker over time
-# TYPE htn_worker_job_counter counter
-htn_worker_job_counter{ip="192.168.0.17",miner="SRBMiner-MULTI/2.4.4",wallet="hoosat:qzk3uh2twkhu0fmuq50mdy3r2yzuwqvstq745hxs7tet25hfd4egcafcdmpdl",worker="002"} 3471
-# HELP htn_diverted_gbt_total Total number of GBT requests diverted to bridge address
-# TYPE htn_diverted_gbt_total counter
-htn_diverted_gbt_total 42
-
+In order to enable the **WebUI** you must specify the following in your `config.yaml`
+```yaml
+web_port: :8888  # Port to bind the WebUI to - or could be 127.0.0.1:8888 or 0.0.0.0:8888 or any other valid IP binding
+stratum_addr: "stratum+tcp://htn.foztor.net:5555  # This is the stratum address the bridge is listening on - it is displayed on the welcome page as an instruction to the miners
 ```
 
-# Install
+### Reverse Proxy (Optional)
 
-## Docker All-in-one
+You probably want to front the WebUI with a reverse proxy if only to provide TLS.
+```nginx
+server {
+    server_name uk-pool.htn.foztor.net;
 
-Note: This does requires that docker is installed.
+    # API must never return the HTML refresh page
+    location ^~ /api/ {
+        proxy_pass http://192.168.1.10:8888;
+        proxy_intercept_errors off;
 
-  
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-`docker compose -f docker-compose-all.yml up -d` will run the bridge with default settings. This assumes a local hoosat node with default port settings and exposes port 5555 to incoming stratum connections.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 
-  
+    location / {
+        proxy_pass http://192.168.1.10:8888;
 
-This also spins up a local prometheus and grafana instance that gather stats and host the metrics dashboard. Once the services are up and running you can view the dashboard using `http://127.0.0.1:3000/d/x7cE7G74k/monitoring`
+        proxy_intercept_errors on;
+        error_page 502 504 =200 /refresh.html;
 
-Default grafana user/pass: admin/admin
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-Most of the stats on the graph are averaged over an hour time period, so keep in mind that the metrics might be inaccurate for the first hour or so that the bridge is up.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location = /refresh.html {
+        root /var/www/html;
+        internal;
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/uk-pool.htn.foztor.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/uk-pool.htn.foztor.net/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+```
 
 
-## Docker (non-compose)
-
-Note: This does not require pulling down the repo, it only requires that docker is installed.
-
-`docker run -p 5555:5555 Hoosat-Oy/htn-stratum-bridge:latest --log=false` will run the bridge with default settings. This assumes a local hoosat node with default port settings and exposes port 5555 to incoming stratum connections.
-
-
-Detailed:
-
-`docker run -p {stratum_port}:5555 Hoosat-Oy/htn-stratum-bridge  --log=false --hoosat={hoosat_address} --stats={false}` will run the bridge targeting a hoosat node at {hoosat_address}. stratum port accepting connections on {stratum_port}, and only logging connection activity, found blocks, and errors
-
-  
 
 ## Manual build
 
-Install go 1.18 using whatever package manager is approprate for your system
+Install go 1.25 using whatever package manager is approprate for your system
 
   
 
@@ -130,7 +118,7 @@ Modify the config file in ./cmd/bridge/config.yaml with your setup, the file com
 
   
 
-run `./hoosatbridge` in the `cmd/hoosatbridge` directory
+run `./htnbridge --solo` in the `cmd/hoosatbridge` directory
 
   
 

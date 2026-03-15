@@ -125,6 +125,10 @@ The WebUI will persist it's stats in mining.db
 Do NOT open this file with a WRITE lock whilst the bridge is running
 Opening it in readonly mode should be fine
 
+## Front page listing
+To get your FrankenPool Bridge listed on the front page, please contact @Foztor on discord.
+The table of active pools is built at runtime
+
 ## Manual build
 
 Install go 1.25 using whatever package manager is approprate for your system

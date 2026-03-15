@@ -105,6 +105,20 @@ server {
 }
 ```
 
+Example refresh.html referenced above:
+```
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="refresh" content="2">
+    <title>Service Starting...</title>
+  </head>
+  <body>
+    <p>Service is currently unavailable. Retrying in 2 seconds...</p>
+  </body>
+</html>
+
+```
 
 
 ## Manual build

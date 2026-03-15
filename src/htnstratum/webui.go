@@ -238,7 +238,7 @@ fetch('https://htn-dl.foztor.net/pools.php')
 <tr>
   <td>Hoominer</td>
   <td>Everything :) </td>
-  <td><a href="https://github.com/HoosatNetwork/hoominer/releases">//https://github.com/HoosatNetwork/hoominer/releases</a></td>
+  <td><a href="https://github.com/HoosatNetwork/hoominer/releases">https://github.com/HoosatNetwork/hoominer/releases</a></td>
 </tr>
 </tbody>
 </table>

@@ -68,10 +68,19 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   button:hover{background:#00d4ff;color:#1a1a2e}
   .error{color:#ff6b6b;margin-top:8px}
   table{width:100%;border-collapse:collapse;margin-top:24px}
+  table a{color:#00ff88;text-decoration:none} /* Bright cyan for unvisited */
+  table a:visited{color:#ffaa00} /* Gold for visited */
+  table a:hover{color:#ffffff} /* White on hover */
   th{background:#0f3460;padding:10px 12px;text-align:left;font-size:13px}
   td{padding:8px 12px;border-bottom:1px solid #0f3460;font-size:13px}
   tr:hover td{background:#16213e}
-  #pools-table{width:90%;margin:0 auto}  /* Center and 90% width */
+  #pools-table{width:90%;margin:0 auto}
+  #pools-table a{color:#00ff88;text-decoration:none} /* Bright cyan for unvisited */
+  #pools-table a:visited{color:#ffaa00} /* Gold for visited */
+  #pools-table a:hover{color:#ffffff} /* White on hover */
+  #ping-results{margin-top:16px;text-align:center;color:#00d4ff}
+  #ping-results a{color:#00ff88;text-decoration:underline} /* Match table links */
+  #ping-results a:visited{color:#ffaa00}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
@@ -90,21 +99,41 @@ They are directly mined by you</h5>
   <button type="submit">View Stats</button>
 </form>
 
-<h3>Other Solo HTN Pools Like This One</h3>
+<h3>Other HTN Pools like this</h3>
 <table id="pools-table">
 <thead>
 <tr>
   <th>Pool URL</th>
   <th>Location</th>
   <th>Operator</th>
+  <th>Ping (ms)</th>
 </tr>
 </thead>
 <tbody id="pools-tbody">
-<tr><td colspan="3">Loading pools...</td></tr>
+<tr><td colspan="4">Loading pools...</td></tr>
 </tbody>
 </table>
 
+<div id="ping-results"></div>
+
 <script>
+var currentStratum = "{{.StratumAddr}}";
+var poolsData = []; // Store pool data
+
+function pingFQDN(url) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    fetch(url, { method: 'HEAD', mode: 'no-cors' })
+      .then(() => {
+        const end = Date.now();
+        resolve(end - start);
+      })
+      .catch(() => {
+        resolve(-1); // Error
+      });
+  });
+}
+
 fetch('https://htn-dl.foztor.net/pools.php')
   .then(response => {
     if (!response.ok) {
@@ -113,24 +142,114 @@ fetch('https://htn-dl.foztor.net/pools.php')
     return response.json();
   })
   .then(data => {
+    poolsData = data;
     let html = '';
     data.forEach(pool => {
       html += '<tr>' +
         '<td><a href="' + pool.pool_url + '">' + pool.pool_url + '</a></td>' +
         '<td>' + pool.location + '</td>' +
         '<td>' + pool.operator + '</td>' +
+        '<td id="ping-' + pool.pool_url.replace(/[^a-zA-Z0-9]/g, '') + '">Pinging...</td>' +
         '</tr>';
     });
     document.getElementById('pools-tbody').innerHTML = html;
+
+    // Ping each pool
+    const pingPromises = data.map(pool => {
+      const fqdn = new URL(pool.pool_url).hostname;
+      return pingFQDN('https://' + fqdn).then(latency => ({
+        url: pool.pool_url,
+        latency: latency
+      }));
+    });
+
+    Promise.all(pingPromises).then(results => {
+      let minLatency = Infinity;
+      let bestPool = null;
+      const currentFQDN = window.location.hostname;  
+
+      results.forEach(result => {
+        const id = 'ping-' + result.url.replace(/[^a-zA-Z0-9]/g, '');
+        const el = document.getElementById(id);
+        if (el) {
+          el.textContent = result.latency >= 0 ? result.latency + ' ms' : 'Error';
+        }
+        if (result.latency >= 0 && result.latency < minLatency) {
+          minLatency = result.latency;
+          bestPool = result.url;
+        }
+      });
+
+      // Advice
+      let advice = '';
+      if (currentFQDN && bestPool) {
+        const bestFQDN = new URL(bestPool).hostname;
+        if (currentFQDN === bestFQDN) {
+          advice = 'You are connected to the lowest latency pool!';
+        } else {
+          advice = 'Consider switching to <a href="' + bestPool + '">' + bestPool + '</a> for lower latency (' + minLatency + ' ms).';
+        }
+      } else if (bestPool) {
+        advice = 'Lowest latency pool: <a href="' + bestPool + '">' + bestPool + '</a> (' + minLatency + ' ms).';
+      }
+      document.getElementById('ping-results').innerHTML = advice;
+    });
   })
   .catch(error => {
     console.error('Error fetching pools:', error);
-    document.getElementById('pools-tbody').innerHTML = '<tr><td colspan="3">Error loading pools.</td></tr>';
+    document.getElementById('pools-tbody').innerHTML = '<tr><td colspan="4">Error loading pools.</td></tr>';
   });
 </script>
+<h3>Miner Downloads</h3>
+<table id="miners-table">
+<thead>
+<tr>
+  <th>Miner Name</th>
+  <th>Supports</th>
+  <th>Download URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>hoo_cpu</td>
+  <td>AVX2 X64 CPU</td>
+  <td><a href="https://htn.foztor.net/">https://htn.foztor.net/</a></td>
+</tr>
+<tr>
+  <td>hoo_gpu</td>
+  <td>NVIDIA CUDA GPUS Maxwell and above</td>
+  <td><a href="https://htn.foztor.net/">https://htn.foztor.net/</a></td>
+</tr>
+<tr>
+  <td>hoo_gpu_amd</td>
+  <td>AMD ROCM GPUS - supports Vega  and above</td>
+  <td><a href="https://htn.foztor.net/">https://htn.foztor.net/</a></td>
+</tr>
+<tr>
+  <td>hoo_cpu_arm</td>
+  <td>ARM64 Linux</td>
+  <td><a href="https://htn.foztor.net/">https://htn.foztor.net/</a></td>
+</tr>
+<tr>
+  <td>hoodroid</td>
+  <td>Android 7+ 64 bit</td>
+  <td><a href="https://hoodroid.htn.foztor.net/">https://hoodroid.htn.foztor.net/</a></td>
+</tr>
+<tr>
+  <td>Hoominer</td>
+  <td>Everything :) </td>
+  <td><a href="https://github.com/HoosatNetwork/hoominer/releases">//https://github.com/HoosatNetwork/hoominer/releases</a></td>
+</tr>
+</tbody>
+</table>
+
+<BR>
+
+NB Only Hoominer has a native Windows binary, but all the others run fine under WSL<BR>
+Hoominer is the reference miner.  The other miners implement a DevFee, and higher hashrate
+
 </body>
 </html>`))
-
 // statsTmpl renders the per-wallet stats page.
 var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 	"div": func(a, b float64) float64 { return a / b },

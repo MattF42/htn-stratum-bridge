@@ -54,6 +54,9 @@ stratum_addr: "stratum+tcp://htn.foztor.net:5555  # This is the stratum address 
 ### Reverse Proxy (Optional)
 
 You probably want to front the WebUI with a reverse proxy if only to provide TLS.
+For instance with NGINX (and a friendly reloading page for when the pool is down, provide appropriate content in /var/www/html/refresh.html (or whatever)
+Adjust IP adddress and ports to match config.yaml and reflect your setup.
+
 ```nginx
 server {
     server_name uk-pool.htn.foztor.net;
@@ -110,7 +113,7 @@ Install go 1.25 using whatever package manager is approprate for your system
 
   
 
-run `cd cmd/hoosatbridge;go build .`
+run `cd cmd/htnbridge;go build .`
 
   
 

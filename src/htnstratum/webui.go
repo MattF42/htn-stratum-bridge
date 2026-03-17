@@ -123,16 +123,20 @@ var poolsData = []; // Store pool data
 function pingFQDN(url) {
   return new Promise((resolve) => {
     const start = Date.now();
-    fetch(url, { method: 'HEAD', mode: 'no-cors' })
-      .then(() => {
-        const end = Date.now();
-        resolve(end - start);
-      })
-      .catch(() => {
-        resolve(-1); // Error
-      });
+    const img = new Image();
+
+    // We don't care if it succeeds or fails, just that the server responded
+    img.onload = () => resolve(Date.now() - start);
+    img.onerror = () => resolve(Date.now() - start);
+
+    // Append a random string to prevent browser caching
+    img.src = url + "/ping_test_" + Math.random();
+
+    // Set a timeout so it doesn't hang forever
+    setTimeout(() => resolve(-1), 5000); 
   });
 }
+
 
 fetch('https://htn-dl.foztor.net/pools.php')
   .then(response => {
@@ -156,12 +160,14 @@ fetch('https://htn-dl.foztor.net/pools.php')
 
     // Ping each pool
     const pingPromises = data.map(pool => {
-      const fqdn = new URL(pool.pool_url).hostname;
-      return pingFQDN('https://' + fqdn).then(latency => ({
-        url: pool.pool_url,
-        latency: latency
-      }));
-    });
+    // .origin includes protocol and port (e.g., http://some.domain.com:1234)
+    const targetOrigin = new URL(pool.pool_url).origin;
+  
+    return pingFQDN(targetOrigin).then(latency => ({
+    url: pool.pool_url,
+    latency: latency
+  }));
+});
 
     Promise.all(pingPromises).then(results => {
       let minLatency = Infinity;

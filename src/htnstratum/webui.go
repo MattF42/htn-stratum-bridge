@@ -434,17 +434,16 @@ function copyToClipboard() {
   <td>{{fmtTime $b.Timestamp}}</td>
   <td title="{{$b.BlockHash}}">{{shortHash $b.BlockHash}}<button class="copy-btn" data-hash="{{$b.BlockHash}}" onclick="copyHash(this)" title="Copy full hash">⧉</button></td>
   <td>{{$b.WorkerName}}</td>
-  <td>
-    {{if eq $b.Status "blue"}}
-      <span style="color: DodgerBlue;">Blue</span>
-    {{else if eq $b.Status "red"}}
-      <span style="color: IndianRed;">Red</span>
-    {{else if eq $b.Status "merge_duplicate"}}
-      <span style="color: cyan;">Merge Duplicate</span>
-    {{else}}
-      <span class="badge-pending">Pending</span>
-    {{end}}
-  </td>
+ <!-- Put logic inside the TD but the title ON the TD -->
+  {{if eq $b.Status "blue"}}
+    <td title="Rewarded Block"><span style="color: DodgerBlue;">Blue</span></td>
+  {{else if eq $b.Status "red"}}
+    <td title="An Orphan in old money"><span style="color: IndianRed;">Red</span></td>
+  {{else if eq $b.Status "merge_duplicate"}}
+    <td title="Reward attributed to another block"><span style="color: cyan;">Merge Duplicate</span></td>
+  {{else}}
+    <td title="Waiting to assess DAG status"><span class="badge-pending">Pending</span></td>
+  {{end}}
   <td>{{fmtAtoms $b.RewardAtoms}}</td>
 </tr>
 {{end}}
@@ -523,11 +522,11 @@ function renderTable(blocks) {
     if (b.Status === 'blue') {
       statusCell = '<span style="color: DodgerBlue;">Blue</span>';
     } else if (b.Status === 'red') {
-      statusCell = '<span style="color: IndianRed;">Red</span>';
+      statusCell = '<span style="color: IndianRed;" title="An Orphan in old money">Red</span>';
     } else if (b.Status === 'merge_duplicate') {
-      statusCell = '<span style="color: cyan;">Merge Duplicate</span>';
+      statusCell = '<span style="color: cyan;" title="Reward attributed to another block">Merge Duplicate</span>';
     } else {
-      statusCell = '<span class="badge-pending">Pending</span>';
+      statusCell = '<span class="badge-pending" title="Waiting to assess DAG status">Pending</span>';
     }
 
     // Reward cell: just the atoms (0 for no reward)

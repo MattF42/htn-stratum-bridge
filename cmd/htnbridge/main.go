@@ -10,6 +10,7 @@ import (
 	"time"
 
 	htnstratum "github.com/Hoosat-Oy/htn-stratum-bridge/src/htnstratum"
+        "github.com/Hoosat-Oy/htn-stratum-bridge/src/pow"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,6 +37,10 @@ func main() {
 		})
 	}
 
+	
+    
+	cfg.RemoveDisconnectedFromStats = true // Default to true
+	pow.SetUseHoohashCLibrary(true)  // Enables C library only on aarch64 Linux - everything else ignores this
 	flag.StringVar(&cfg.StratumPort, "stratum", cfg.StratumPort, "stratum port to listen on")
 	flag.BoolVar(&cfg.PrintStats, "stats", cfg.PrintStats, "true to show periodic stats to console")
 	flag.StringVar(&cfg.RPCServer, "hoosat_address", cfg.RPCServer, "address of the spectred node")

@@ -59,6 +59,10 @@ func main() {
 	flag.Int64Var(&cfg.Vote, "vote", cfg.Vote, "Vote id of the poll for voting on blocks")
 	flag.StringVar(&cfg.WebPort, "webport", cfg.WebPort, "address:port for the miner stats web UI (e.g. :8080)")
 	flag.StringVar(&cfg.StratumAddr, "stratum_addr", cfg.StratumAddr, "String to be displayed in WebUI instructing miners to connect to")
+	flag.BoolVar(&cfg.EnableTLS, "tls", cfg.EnableTLS, "enable TLS/HTTPS for the web UI")
+	flag.StringVar(&cfg.TLSCertFile, "tls-cert", cfg.TLSCertFile, "path to TLS certificate file (PEM)")
+	flag.StringVar(&cfg.TLSKeyFile, "tls-key", cfg.TLSKeyFile, "path to TLS private key file (PEM)")
+	flag.StringVar(&cfg.HTTPSPort, "https-port", cfg.HTTPSPort, "address:port for the HTTPS web UI listener (default :443)")
 	flag.Parse()
 
 	if cfg.MinShareDiff == 0 {
@@ -88,6 +92,16 @@ func main() {
 	log.Printf("Vote id:\t\t\t%d", cfg.Vote)
 	log.Printf("Web UI port:\t\t\t%s", cfg.WebPort)
 	log.Printf("Stratum Connection String:\t\t\t%s", cfg.StratumAddr)
+	log.Printf("TLS enabled:\t\t\t%t", cfg.EnableTLS)
+	if cfg.EnableTLS {
+		log.Printf("TLS cert file:\t\t\t%s", cfg.TLSCertFile)
+		log.Printf("TLS key file:\t\t\t%s", cfg.TLSKeyFile)
+		httpsPort := cfg.HTTPSPort
+		if httpsPort == "" {
+			httpsPort = ":443"
+		}
+		log.Printf("HTTPS port:\t\t\t%s", httpsPort)
+	}
 	log.Printf("Bridge fee enabled:\t\t%t", cfg.BridgeFee.Enabled)
 	if cfg.BridgeFee.Enabled {
 		log.Printf("Bridge fee rate:\t\t%d ppm (%.4f%%)", cfg.BridgeFee.RatePpm, float64(cfg.BridgeFee.RatePpm)/100.0)

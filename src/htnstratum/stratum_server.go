@@ -58,8 +58,19 @@ type BridgeConfig struct {
 
 	// WebPort is the address:port for the miner stats web UI (e.g. ":8080").
 	// Leave empty to disable the web UI.
-	WebPort string `yaml:"web_port"`
+	WebPort     string `yaml:"web_port"`
 	StratumAddr string `yaml:"stratum_addr"`
+
+	// RemoveDisconnectedFromStats controls whether disconnected workers are
+	// removed from the stats display.
+	RemoveDisconnectedFromStats bool `yaml:"remove_disconnected_from_stats"`
+
+	// TLS settings for the web UI.  EnableTLS must be true for the others to
+	// have any effect.  HTTPSPort defaults to ":443" when left empty.
+	EnableTLS   bool   `yaml:"enable_tls"`
+	TLSCertFile string `yaml:"tls_cert_file"`
+	TLSKeyFile  string `yaml:"tls_key_file"`
+	HTTPSPort   string `yaml:"https_port"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -130,7 +141,8 @@ func ListenAndServe(cfg BridgeConfig) error {
 	// Start the miner stats web UI if a port is configured.  We pass the
 	// shareHandler so that the /stats page can display live worker stats.
 	if cfg.WebPort != "" && cfg.StratumAddr != "" {
-		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr, cfg.BridgeFee.RatePpm)
+		StartWebUI(miningDB, cfg.WebPort, logger, shareHandler, cfg.StratumAddr, cfg.BridgeFee.RatePpm,
+			cfg.EnableTLS, cfg.TLSCertFile, cfg.TLSKeyFile, cfg.HTTPSPort)
 		// Recover pending rewards on startup
 		rows, err := miningDB.db.Query("SELECT block_hash FROM block_rewards WHERE status == 'pending'")
 		if err != nil {

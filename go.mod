@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/Hoosat-Oy/HTND v1.6.10
+	github.com/chewxy/math32 v1.11.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-colorable v0.1.14
@@ -21,7 +22,6 @@ require github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 // indirect
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chewxy/math32 v1.11.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/jrick/logrotate v1.1.2 // indirect

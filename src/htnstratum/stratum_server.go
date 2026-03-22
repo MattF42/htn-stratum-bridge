@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v1.7.0-FozPool-1"
+const version = "v1.7.0-FozPool-2"
 const minBlockWaitTime = 100 * time.Millisecond
 
 // Default bridge fee configuration

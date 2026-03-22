@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	// "log"
 
 	"go.uber.org/zap"
 )
@@ -941,7 +942,14 @@ type statsPageData struct {
 // port (e.g. ":8080").  It is non-blocking: the listener runs in a goroutine.
 // sh may be nil if no share handler has been created yet (workers section will
 // simply be omitted from the stats page).
-func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string, feePPM int) {
+//
+// When enableTLS is true and the certificate/key files load successfully, an
+// HTTPS listener is started on httpsPort (defaulting to ":443") and the HTTP
+// listener on port is repurposed to redirect all requests to HTTPS.  If TLS
+// initialisation fails the function logs the error and falls back to plain
+// HTTP on port.
+func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string, feePPM int,
+	enableTLS bool, tlsCertFile, tlsKeyFile, httpsPort string) {
         feePercent := float64(feePPM) / 100.0  // Convert PPM to percentage (e.g., 50 -> 0.5)
 
 	mux := http.NewServeMux()
@@ -1191,9 +1199,69 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 
 
 	logger.Info("starting web UI on " + port)
-	go func() {
-		if err := http.ListenAndServe(port, mux); err != nil {
-			logger.Error("web UI server error", zap.Error(err))
+	if enableTLS {
+		if httpsPort == "" {
+			httpsPort = ":443"
 		}
-	}()
+		// Verify that the cert and key files are readable before committing to
+		// TLS so we can fall back gracefully rather than crashing.
+		certFile, certErr := os.Open(tlsCertFile)
+		if certErr == nil {
+			certFile.Close()
+		}
+		keyFile, keyErr := os.Open(tlsKeyFile)
+		if keyErr == nil {
+			keyFile.Close()
+		}
+		if certErr != nil || keyErr != nil {
+			if certErr != nil {
+				logger.Errorw("webui: TLS cert file not readable, falling back to HTTP", "file", tlsCertFile, zap.Error(certErr))
+			}
+			if keyErr != nil {
+				logger.Errorw("webui: TLS key file not readable, falling back to HTTP", "file", tlsKeyFile, zap.Error(keyErr))
+			}
+			// Fall through to plain HTTP below.
+			enableTLS = false
+		}
+	}
+
+	if enableTLS {
+		// Start the HTTPS listener.
+		logger.Info("starting HTTPS web UI on " + httpsPort)
+		go func() {
+			if err := http.ListenAndServeTLS(httpsPort, tlsCertFile, tlsKeyFile, mux); err != nil {
+				logger.Error("webui: HTTPS server error", zap.Error(err))
+			}
+		}()
+
+		// Repurpose the HTTP port to redirect all traffic to HTTPS.
+		httpsPortForRedirect := httpsPort
+		redirectMux := http.NewServeMux()
+		redirectMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Build the HTTPS target URL.  Strip the leading ":" from the port
+			// when the port is the default 443 so we produce clean URLs.
+			host := r.Host
+			// If the host already contains a port, strip it.
+			if h, _, err := net.SplitHostPort(host); err == nil {
+				host = h
+			}
+			target := "https://" + host
+			if httpsPortForRedirect != ":443" && httpsPortForRedirect != "443" {
+				target += httpsPortForRedirect
+			}
+			target += r.RequestURI
+			http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		})
+		go func() {
+			if err := http.ListenAndServe(port, redirectMux); err != nil {
+				logger.Error("webui: HTTP redirect server error", zap.Error(err))
+			}
+		}()
+	} else {
+		go func() {
+			if err := http.ListenAndServe(port, mux); err != nil {
+				logger.Error("web UI server error", zap.Error(err))
+			}
+		}()
+	}
 }

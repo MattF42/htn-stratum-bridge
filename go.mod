@@ -3,7 +3,7 @@ module github.com/Hoosat-Oy/htn-stratum-bridge
 go 1.26.0
 
 require (
-	github.com/Hoosat-Oy/HTND v1.6.10
+	github.com/Hoosat-Oy/HTND v1.7.0
 	github.com/chewxy/math32 v1.11.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0

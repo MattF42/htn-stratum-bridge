@@ -109,7 +109,8 @@ func SwapEndian32(b []byte) []byte {
 	return out
 }
 
-// HexToBytes decodes a hex string, returning nil on error.
+// HexToBytes decodes a hex string. Returns nil if the input is invalid hex.
+// Callers should check the result length when a specific size is expected.
 func HexToBytes(s string) []byte {
 	b, _ := hex.DecodeString(s)
 	return b

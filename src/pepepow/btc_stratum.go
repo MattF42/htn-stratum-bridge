@@ -54,9 +54,14 @@ func (h *PepepowHandler) allocateExtranonce1() string {
 	defer h.mu.Unlock()
 	en := h.nextExtranonce
 	h.nextExtranonce++
-	buf := make([]byte, h.extranonce1Size)
+	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, en)
-	return hex.EncodeToString(buf[4-h.extranonce1Size:])
+	// Return only the rightmost extranonce1Size bytes
+	start := 4 - h.extranonce1Size
+	if start < 0 {
+		start = 0
+	}
+	return hex.EncodeToString(buf[start:])
 }
 
 // HandleSubscribe implements Bitcoin stratum mining.subscribe.
@@ -111,6 +116,14 @@ func (h *PepepowHandler) HandleAuthorize(ctx *gostratum.StratumContext, event go
 	// Basic validation for PePePow addresses (base58check, starts with P for mainnet)
 	if len(address) < 25 || len(address) > 36 {
 		return fmt.Errorf("invalid PePePow address length: %s", address)
+	}
+	if address[0] != 'P' && address[0] != 'p' {
+		return fmt.Errorf("invalid PePePow address prefix (expected P): %s", address)
+	}
+	// Verify the address decodes as valid base58check
+	decoded := decodeBase58Check(address)
+	if decoded == nil {
+		return fmt.Errorf("invalid PePePow address (base58check decode failed): %s", address)
 	}
 
 	ctx.WalletAddr = address

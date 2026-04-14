@@ -174,7 +174,7 @@ func configureZapSimple(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
 	}
 
 	fileEncoder := zapcore.NewJSONEncoder(pe)
-	logFile, err := os.OpenFile("pepepow_bridge.log", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
+	logFile, err := os.OpenFile("pepepow_bridge.log", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0600)
 	if err != nil {
 		panic(err)
 	}
@@ -232,7 +232,7 @@ func (c *pepepowClientListener) broadcastJob(tmpl *BlockTemplate, cleanJobs bool
 		// In a real pool, each miner would have their own payout script
 		payoutScript := defaultPayoutScript(c.cfg.PayoutAddress)
 		if payoutScript == nil {
-			c.logger.Error("invalid payout address configuration")
+			c.logger.Errorf("invalid payout address configuration: failed to decode address '%s'", c.cfg.PayoutAddress)
 			continue
 		}
 
@@ -260,24 +260,34 @@ func defaultPayoutScript(address string) []byte {
 	return P2PKHScript(decoded[1:21])
 }
 
+// base58Alphabet is the Bitcoin base58 alphabet.
+const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+// base58Map provides O(1) character-to-index lookup for base58 decoding.
+var base58Map [256]int
+
+func init() {
+	for i := range base58Map {
+		base58Map[i] = -1
+	}
+	for i, c := range base58Alphabet {
+		base58Map[c] = i
+	}
+}
+
 // decodeBase58Check decodes a base58check-encoded string.
 func decodeBase58Check(encoded string) []byte {
 	if len(encoded) == 0 {
 		return nil
 	}
 
-	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
 	// Decode base58 to big integer
 	result := new(bigInt)
 	for _, c := range encoded {
-		idx := -1
-		for i, a := range alphabet {
-			if c == a {
-				idx = i
-				break
-			}
+		if c > 255 {
+			return nil // invalid character
 		}
+		idx := base58Map[c]
 		if idx < 0 {
 			return nil // invalid character
 		}

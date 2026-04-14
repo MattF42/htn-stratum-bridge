@@ -5,9 +5,10 @@
 stratum_port: ":3333"
 
 # PePe-core node Bitcoin JSON-RPC connection
+# WARNING: Change these credentials before production use!
 node_url: "http://127.0.0.1:4330"
-node_user: "pepepowrpc"
-node_pass: "pepepowpass"
+node_user: ""
+node_pass: ""
 
 # min_share_diff: minimum stratum share difficulty
 min_share_diff: 1

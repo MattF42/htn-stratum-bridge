@@ -71,8 +71,8 @@ func generatePepepowMatrix(seed []byte) *[64][64]float64 {
 	for i := 0; i < 64; i++ {
 		for j := 0; j < 64; j++ {
 			val := gen.next()
-			lower4 := uint32(val & 0xFFFFFFFF)
-			mat[i][j] = float64(lower4) / float64(math.MaxUint32) * normalize
+			lower32Bits := uint32(val & 0xFFFFFFFF)
+			mat[i][j] = float64(lower32Bits) / float64(math.MaxUint32) * normalize
 		}
 	}
 	return &mat

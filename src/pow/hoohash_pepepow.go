@@ -3,6 +3,7 @@ package pow
 import (
 	"encoding/binary"
 	"math"
+	"math/bits"
 
 	"lukechampine.com/blake3"
 )
@@ -92,7 +93,7 @@ func newPepepowXoshiro(seed []byte) *pepepowXoshiro {
 }
 
 func (x *pepepowXoshiro) next() uint64 {
-	res := rotl64pp(x.s0+x.s3, 23) + x.s0
+	res := bits.RotateLeft64(x.s0+x.s3, 23) + x.s0
 	t := x.s1 << 17
 
 	x.s2 ^= x.s0
@@ -101,13 +102,9 @@ func (x *pepepowXoshiro) next() uint64 {
 	x.s0 ^= x.s3
 
 	x.s2 ^= t
-	x.s3 = rotl64pp(x.s3, 45)
+	x.s3 = bits.RotateLeft64(x.s3, 45)
 
 	return res
-}
-
-func rotl64pp(x uint64, k int) uint64 {
-	return (x << k) | (x >> (64 - k))
 }
 
 // convertBytesToUint32ArrayBE reads 8 big-endian uint32 values from 32 bytes.

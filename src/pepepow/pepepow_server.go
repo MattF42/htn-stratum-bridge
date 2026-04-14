@@ -323,9 +323,8 @@ func (c *pepepowClientListener) buildJobKey(tmpl *BlockTemplate, client *gostrat
 	return key
 }
 
-// defaultPayoutScript creates a simple P2PKH output script from a PePePow address.
-// In a production implementation this would properly decode the base58check address.
-// For now, we use a placeholder that should be replaced with proper address decoding.
+// defaultPayoutScript creates a P2PKH output script from a PePePow address
+// by decoding the base58check encoding and extracting the pubkey hash.
 func defaultPayoutScript(address string) []byte {
 	if address == "" {
 		return nil

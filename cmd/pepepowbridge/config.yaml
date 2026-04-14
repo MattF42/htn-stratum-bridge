@@ -1,5 +1,6 @@
 # PePePow Stratum Bridge Configuration
-# Bitcoin-style stratum bridge for mining PePePow with hoohash
+# Bitcoin-style stratum bridge for solo mining PePePow with hoohash
+# Each miner's own P2PKH address (from mining.authorize) is used for coinbase payouts.
 
 # stratum_port: port for incoming stratum connections from miners
 stratum_port: ":3333"
@@ -14,12 +15,8 @@ node_pass: ""
 min_share_diff: 1
 
 # block_wait_time: how often to poll for new block templates
-# PePePow has ~60s block times, so 1-5s polling is fine
-block_wait_time: 2s
-
-# payout_address: payout address for mined blocks (PePePow P2PKH address)
-# WARNING: You MUST set this to your own PePePow address before mining!
-payout_address: ""
+# PePePow has ~20s block times, so 1-2s polling is appropriate
+block_wait_time: 1s
 
 # coinbase_text: arbitrary text included in the coinbase transaction
 coinbase_text: "/pepepow-bridge/"
@@ -38,3 +35,18 @@ log_to_file: false
 
 # mine_when_not_synced: start mining even if node is still syncing
 mine_when_not_synced: false
+
+# bridge_fee: optional bridge operator fee
+# When enabled, a deterministic percentage of block templates use the bridge
+# operator's address instead of the miner's address (same approach as HTN).
+# Disabled by default — requires enabled: true AND a non-empty server_salt.
+bridge_fee:
+  enabled: false
+  # rate_ppm: parts per 10000 (e.g. 50 = 0.5%, 100 = 1%, 500 = 5%)
+  rate_ppm: 50
+  # address: PePePow P2PKH address for the bridge operator's fee
+  address: ""
+  # server_salt: secret salt for deterministic HMAC-SHA256 selection
+  # Generate with: openssl rand -hex 32
+  # REQUIRED when enabled — without this, the fee feature stays disabled.
+  server_salt: ""

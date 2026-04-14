@@ -2,12 +2,15 @@ package pepepow
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/Hoosat-Oy/htn-stratum-bridge/src/bridgefee"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 	"github.com/mattn/go-colorable"
 	"go.uber.org/zap"
@@ -15,6 +18,16 @@ import (
 )
 
 const pepepowVersion = "v0.1.0-pepepow"
+
+// BridgeFeeConfig holds the bridge fee configuration for PePePow.
+// When enabled, a deterministic percentage of block templates use the bridge
+// operator's address instead of the miner's address (same approach as HTN).
+type BridgeFeeConfig struct {
+	Enabled    bool   `yaml:"enabled"`     // Enable bridge fee (default: false)
+	RatePpm    int    `yaml:"rate_ppm"`    // Parts per 10000 (e.g. 50 = 0.5%)
+	Address    string `yaml:"address"`     // Bridge payout address (PePePow P2PKH)
+	ServerSalt string `yaml:"server_salt"` // HMAC secret for deterministic selection
+}
 
 // BridgeConfig holds the configuration for the PePePow stratum bridge.
 type BridgeConfig struct {
@@ -35,8 +48,8 @@ type BridgeConfig struct {
 	BlockWaitTime  time.Duration `yaml:"block_wait_time"`
 	CoinbaseText   string        `yaml:"coinbase_text"`
 
-	// Payout address for the bridge/pool operator
-	PayoutAddress string `yaml:"payout_address"`
+	// Bridge fee: diverts a % of block rewards to the bridge operator
+	BridgeFee BridgeFeeConfig `yaml:"bridge_fee"`
 
 	MineWhenNotSynced bool `yaml:"mine_when_not_synced"`
 }
@@ -81,6 +94,20 @@ func ListenAndServe(cfg BridgeConfig) error {
 	}
 
 	handler := NewPepepowHandler(logger, rpc, minDiff, coinbaseText)
+
+	// Log bridge fee configuration
+	if cfg.BridgeFee.Enabled {
+		if cfg.BridgeFee.ServerSalt == "" {
+			logger.Warn("bridge_fee is enabled but server_salt is empty — fee feature will be disabled")
+		} else {
+			logger.Infof("bridge fee enabled: rate=%d/10000 (%.2f%%), address=%s",
+				cfg.BridgeFee.RatePpm,
+				float64(cfg.BridgeFee.RatePpm)/100.0,
+				cfg.BridgeFee.Address)
+		}
+	} else {
+		logger.Info("bridge fee disabled")
+	}
 
 	// Build the stratum handler map (Bitcoin-style)
 	handlers := gostratum.StratumHandlerMap{
@@ -130,7 +157,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 
 	blockWaitTime := cfg.BlockWaitTime
 	if blockWaitTime < 500*time.Millisecond {
-		blockWaitTime = 500 * time.Millisecond // PePePow has ~60s block times
+		blockWaitTime = 500 * time.Millisecond // PePePow has ~20s block times
 	}
 
 	go func() {
@@ -187,13 +214,14 @@ func configureZapSimple(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
 
 // pepepowClientListener manages connected PePePow miners.
 type pepepowClientListener struct {
-	logger  *zap.SugaredLogger
-	handler *PepepowHandler
-	rpc     *RPCClient
-	mu      sync.Mutex
-	clients map[int32]*gostratum.StratumContext
-	counter int32
-	cfg     BridgeConfig
+	logger     *zap.SugaredLogger
+	handler    *PepepowHandler
+	rpc        *RPCClient
+	mu         sync.Mutex
+	clients    map[int32]*gostratum.StratumContext
+	counter    int32
+	cfg        BridgeConfig
+	jobCounter uint64 // for bridge fee determinism
 }
 
 func (c *pepepowClientListener) OnConnect(ctx *gostratum.StratumContext) {
@@ -215,6 +243,8 @@ func (c *pepepowClientListener) OnDisconnect(ctx *gostratum.StratumContext) {
 }
 
 // broadcastJob sends the current block template to all connected clients.
+// For solo mining, each miner's own address is used in the coinbase payout.
+// When bridge fee is enabled, a deterministic % of jobs use the bridge address.
 func (c *pepepowClientListener) broadcastJob(tmpl *BlockTemplate, cleanJobs bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -227,21 +257,70 @@ func (c *pepepowClientListener) broadcastJob(tmpl *BlockTemplate, cleanJobs bool
 			continue // not yet authorized
 		}
 
-		// Build payout script for this miner's address
-		// For simplicity, we use the address from the config as default payout
-		// In a real pool, each miner would have their own payout script
-		payoutScript := defaultPayoutScript(c.cfg.PayoutAddress)
-		if payoutScript == nil {
-			c.logger.Errorf("invalid payout address configuration: failed to decode address '%s'", c.cfg.PayoutAddress)
-			continue
+		// Determine payout address: miner's address or bridge fee address
+		payoutAddr := client.WalletAddr
+		isFeeJob := false
+
+		if c.cfg.BridgeFee.Enabled && c.cfg.BridgeFee.ServerSalt != "" && c.cfg.BridgeFee.Address != "" {
+			jobKey := c.buildJobKey(tmpl, client)
+			if bridgefee.ShouldReplaceGBT(c.cfg.BridgeFee.ServerSalt, c.cfg.BridgeFee.RatePpm, jobKey) {
+				payoutAddr = c.cfg.BridgeFee.Address
+				isFeeJob = true
+				c.logger.Debugf("diverting job to bridge address for client %d (height=%d)", client.Id, tmpl.Height)
+			}
 		}
 
-		go func(ctx *gostratum.StratumContext) {
-			if err := c.handler.SendJob(ctx, tmpl, payoutScript, cleanJobs); err != nil {
+		// Build payout script from the selected address
+		payoutScript := defaultPayoutScript(payoutAddr)
+		if payoutScript == nil {
+			if isFeeJob {
+				c.logger.Errorf("invalid bridge fee address: '%s', falling back to miner address", payoutAddr)
+				payoutScript = defaultPayoutScript(client.WalletAddr)
+				if payoutScript == nil {
+					c.logger.Errorf("invalid miner address for client %d: '%s'", client.Id, client.WalletAddr)
+					continue
+				}
+			} else {
+				c.logger.Errorf("invalid miner address for client %d: '%s'", client.Id, client.WalletAddr)
+				continue
+			}
+		}
+
+		go func(ctx *gostratum.StratumContext, ps []byte) {
+			if err := c.handler.SendJob(ctx, tmpl, ps, cleanJobs); err != nil {
 				c.logger.Warnf("failed to send job to client %d: %v", ctx.Id, err)
 			}
-		}(client)
+		}(client, payoutScript)
 	}
+}
+
+// buildJobKey constructs a deterministic job key for bridge fee selection,
+// matching the HTN approach: jobCounter || prevBlockHash || timestamp || workerID
+func (c *pepepowClientListener) buildJobKey(tmpl *BlockTemplate, client *gostratum.StratumContext) []byte {
+	counter := atomic.AddUint64(&c.jobCounter, 1)
+
+	prevHash := HexToBytes(tmpl.PreviousBlockHash)
+
+	var key []byte
+
+	// Job counter (8 bytes)
+	counterBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(counterBuf, counter)
+	key = append(key, counterBuf...)
+
+	// Previous block hash (32 bytes)
+	key = append(key, prevHash...)
+
+	// Timestamp (8 bytes)
+	tsBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(tsBuf, uint64(tmpl.CurTime))
+	key = append(key, tsBuf...)
+
+	// Worker ID
+	workerID := fmt.Sprintf("%d", client.Id)
+	key = append(key, []byte(workerID)...)
+
+	return key
 }
 
 // defaultPayoutScript creates a simple P2PKH output script from a PePePow address.

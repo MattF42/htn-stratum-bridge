@@ -39,9 +39,14 @@ func main() {
 	flag.BoolVar(&cfg.UseLogFile, "log", cfg.UseLogFile, "log to file")
 	flag.StringVar(&cfg.PromPort, "prom", cfg.PromPort, "prometheus metrics port")
 	flag.StringVar(&cfg.HealthCheckPort, "hcp", cfg.HealthCheckPort, "health check port")
-	flag.StringVar(&cfg.PayoutAddress, "payout", cfg.PayoutAddress, "default payout address (PePePow P2PKH)")
 	flag.StringVar(&cfg.CoinbaseText, "coinbasetext", cfg.CoinbaseText, "text to include in coinbase")
 	flag.BoolVar(&cfg.MineWhenNotSynced, "minewhennotsynced", cfg.MineWhenNotSynced, "mine when node is not synced")
+
+	// Bridge fee flags
+	flag.BoolVar(&cfg.BridgeFee.Enabled, "fee", cfg.BridgeFee.Enabled, "enable bridge fee")
+	flag.IntVar(&cfg.BridgeFee.RatePpm, "feerate", cfg.BridgeFee.RatePpm, "bridge fee rate in parts per 10000 (50 = 0.5%)")
+	flag.StringVar(&cfg.BridgeFee.Address, "feeaddr", cfg.BridgeFee.Address, "bridge fee payout address (PePePow P2PKH)")
+	flag.StringVar(&cfg.BridgeFee.ServerSalt, "feesalt", cfg.BridgeFee.ServerSalt, "bridge fee HMAC server salt")
 	flag.Parse()
 
 	// Defaults
@@ -57,17 +62,26 @@ func main() {
 	if cfg.BlockWaitTime == 0 {
 		cfg.BlockWaitTime = 1 * time.Second
 	}
+	// Default bridge fee rate
+	if cfg.BridgeFee.Enabled && cfg.BridgeFee.RatePpm == 0 {
+		cfg.BridgeFee.RatePpm = 50 // 0.5%
+	}
 
 	log.Println("============================================================")
-	log.Println("  PePePow Stratum Bridge (hoohash)")
+	log.Println("  PePePow Stratum Bridge (hoohash) — Solo Mining")
 	log.Println("============================================================")
 	log.Printf("node:          %s", cfg.NodeURL)
 	log.Printf("stratum:       %s", cfg.StratumPort)
 	log.Printf("prom:          %s", cfg.PromPort)
 	log.Printf("min diff:      %.4f", cfg.MinShareDiff)
 	log.Printf("block wait:    %s", cfg.BlockWaitTime)
-	log.Printf("payout:        %s", cfg.PayoutAddress)
 	log.Printf("coinbase text: %s", cfg.CoinbaseText)
+	if cfg.BridgeFee.Enabled {
+		log.Printf("bridge fee:    enabled (rate=%d/10000, addr=%s)", cfg.BridgeFee.RatePpm, cfg.BridgeFee.Address)
+	} else {
+		log.Printf("bridge fee:    disabled")
+	}
+	log.Printf("mode:          solo (each miner's address used for coinbase)")
 	log.Println("============================================================")
 
 	// Note about merged mining

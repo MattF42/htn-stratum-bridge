@@ -232,8 +232,11 @@ func (h *PepepowHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostr
 	// Compute hoohash PoW
 	powResult := pow.HoohashV110Bitcoin(header[:])
 
-	// Convert to big.Int for comparison (result is already in LE order)
-	powNum := new(big.Int).SetBytes(powResult[:])
+	// Convert to big.Int for comparison.
+	// HoohashV110Bitcoin returns the hash in LE order (matching Bitcoin convention).
+	// big.Int.SetBytes expects BE, so reverse first.
+	powResultBE := ReverseBytes(powResult[:])
+	powNum := new(big.Int).SetBytes(powResultBE)
 
 	// Check against stratum difficulty target
 	stratumTarget := DiffToTarget(state.StratumDiff)

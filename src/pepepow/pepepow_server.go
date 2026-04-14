@@ -174,7 +174,7 @@ func configureZapSimple(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
 	}
 
 	fileEncoder := zapcore.NewJSONEncoder(pe)
-	logFile, err := os.OpenFile("pepepow_bridge.log", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0600)
+	logFile, err := os.OpenFile("pepepow_bridge.log", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
 	if err != nil {
 		panic(err)
 	}

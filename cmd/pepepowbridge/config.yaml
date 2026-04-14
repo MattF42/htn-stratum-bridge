@@ -17,8 +17,9 @@ min_share_diff: 1
 # PePePow has ~60s block times, so 1-5s polling is fine
 block_wait_time: 2s
 
-# payout_address: default payout address for mined blocks (PePePow P2PKH address)
-payout_address: "PMG1tmwb7fRrPnKmRCuAzKBd2t7KPDw6Nf"
+# payout_address: payout address for mined blocks (PePePow P2PKH address)
+# WARNING: You MUST set this to your own PePePow address before mining!
+payout_address: ""
 
 # coinbase_text: arbitrary text included in the coinbase transaction
 coinbase_text: "/pepepow-bridge/"

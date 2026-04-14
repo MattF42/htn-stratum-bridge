@@ -175,7 +175,7 @@ func pepepowSafeComplexTransform(input float64) float64 {
 	for math.IsNaN(tv) || math.IsInf(tv, 0) {
 		input *= 0.1
 		if input <= 0.0000000000001 {
-			return 0 * rounds
+			return 0
 		}
 		rounds++
 		tv = pepepowComplexNonLinear110(input)

@@ -1,0 +1,38 @@
+# PePePow Stratum Bridge Configuration
+# Bitcoin-style stratum bridge for mining PePePow with hoohash
+
+# stratum_port: port for incoming stratum connections from miners
+stratum_port: ":3333"
+
+# PePe-core node Bitcoin JSON-RPC connection
+node_url: "http://127.0.0.1:4330"
+node_user: "pepepowrpc"
+node_pass: "pepepowpass"
+
+# min_share_diff: minimum stratum share difficulty
+min_share_diff: 1
+
+# block_wait_time: how often to poll for new block templates
+# PePePow has ~60s block times, so 1-5s polling is fine
+block_wait_time: 2s
+
+# payout_address: default payout address for mined blocks (PePePow P2PKH address)
+payout_address: "PMG1tmwb7fRrPnKmRCuAzKBd2t7KPDw6Nf"
+
+# coinbase_text: arbitrary text included in the coinbase transaction
+coinbase_text: "/pepepow-bridge/"
+
+# print_stats: print periodic mining stats to console
+print_stats: true
+
+# log_to_file: write logs to pepepow_bridge.log
+log_to_file: false
+
+# health_check_port: if set, exposes /readyz endpoint
+# health_check_port: ":3334"
+
+# prom_port: prometheus metrics endpoint
+# prom_port: ":2115"
+
+# mine_when_not_synced: start mining even if node is still syncing
+mine_when_not_synced: false

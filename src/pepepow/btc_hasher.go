@@ -135,27 +135,38 @@ func CompactToBig(compact uint32) *big.Int {
 	return &target
 }
 
-// TargetToDifficulty converts a 256-bit target to Bitcoin difficulty.
-// difficulty = genesis_target / target
-// where genesis_target is the target for difficulty 1.
+// pepepowDiff1Hex is the difficulty-1 target used for PePePow stratum.
+// PePePow (like many CPU-minable Bitcoin-style coins) applies a 65536×
+// multiplier to the standard Bitcoin diff-1 target, making stratum
+// difficulty-1 shares 65536× easier to find than Bitcoin difficulty-1 shares:
+//
+//	Bitcoin diff-1:  0x00000000FFFF0000...  (genesis target)
+//	PePePow diff-1:  0x0000FFFF00000000...  (Bitcoin_diff1 × 65536)
+//
+// This constant must be used consistently in both DiffToTarget and
+// TargetToDifficulty so that all share-difficulty numbers stay in the
+// same scale as the values reported by the network.
+const pepepowDiff1Hex = "0000FFFF00000000000000000000000000000000000000000000000000000000"
+
+// TargetToDifficulty converts a 256-bit target to PePePow stratum difficulty.
+// difficulty = pepepow_diff1 / target
 func TargetToDifficulty(target *big.Int) float64 {
 	if target.Sign() == 0 {
 		return 0
 	}
-	// Difficulty 1 target for Bitcoin-like chains
-	diff1, _ := new(big.Int).SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)
+	diff1, _ := new(big.Int).SetString(pepepowDiff1Hex, 16)
 	fDiff1 := new(big.Float).SetInt(diff1)
 	fTarget := new(big.Float).SetInt(target)
 	diff, _ := new(big.Float).Quo(fDiff1, fTarget).Float64()
 	return diff
 }
 
-// DiffToTarget converts a stratum difficulty to a 256-bit target.
+// DiffToTarget converts a PePePow stratum difficulty to a 256-bit target.
 func DiffToTarget(diff float64) *big.Int {
 	if diff <= 0 {
 		return new(big.Int)
 	}
-	diff1, _ := new(big.Int).SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)
+	diff1, _ := new(big.Int).SetString(pepepowDiff1Hex, 16)
 	fDiff1 := new(big.Float).SetInt(diff1)
 	fDiff := new(big.Float).SetFloat64(diff)
 	fTarget := new(big.Float).Quo(fDiff1, fDiff)

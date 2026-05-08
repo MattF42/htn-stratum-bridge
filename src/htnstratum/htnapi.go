@@ -193,6 +193,8 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReady
 			htnApi.logger.Warn("context cancelled, stopping block update listener")
 			return
 		case <-blockReadyChan:
+			// htnApi.logger.Info("BlockReadyChan Fires ")
+			htnApi.invalidateGBTCache()
 			blockReadyCb()
 			ticker.Reset(htnApi.blockWaitTime)
 		case <-ticker.C: // timeout, manually check for new blocks

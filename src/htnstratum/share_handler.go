@@ -60,6 +60,7 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
+	onBlockSolved      func() // called immediately after a successful block submission
 	miningDB           *MiningDB // may be nil if DB is not configured
 	lastRewardFetch time.Time
         cachedReward    uint64
@@ -517,6 +518,9 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	_, err = sh.hoosat.SubmitBlock(block, submitInfo.powHash.String())
 	if err == nil && sh.invalidateGBTCache != nil {
 		sh.invalidateGBTCache() // We solved a block - clear the cache
+	}
+	if err == nil && sh.onBlockSolved != nil {
+		go sh.onBlockSolved() // Immediately push new jobs to miners without waiting for node notification
 	}
 	state.RemoveJob(int(submitInfo.jobId))
 	return err

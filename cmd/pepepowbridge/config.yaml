@@ -7,16 +7,16 @@ stratum_port: ":3333"
 
 # PePe-core node Bitcoin JSON-RPC connection
 # WARNING: Change these credentials before production use!
-node_url: "http://127.0.0.1:4330"
-node_user: ""
-node_pass: ""
+node_url: "http://192.168.1.4:8834"
+node_user: "rpcuser"
+node_pass: "MyPassword4RPC"
 
 # min_share_diff: minimum stratum share difficulty
 min_share_diff: 1
 
 # block_wait_time: how often to poll for new block templates
 # PePePow has ~20s block times, so 1-2s polling is appropriate
-block_wait_time: 1s
+block_wait_time: 10s
 
 # coinbase_text: arbitrary text included in the coinbase transaction
 coinbase_text: "/pepepow-bridge/"

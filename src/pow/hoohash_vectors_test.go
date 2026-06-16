@@ -1,0 +1,27 @@
+package pow
+
+import (
+"encoding/hex"
+"testing"
+)
+
+var refVectors = []struct{ hdr, want string }{
+{"0040002015f55835546012d995495575a5df5035edf9da9ba519ba15074b3f56281f4490633987fa94d322e3035f801293cf132bc6fc3bb219faf0329a2ca1ec835d30f9a49acf39595a6b4bfe277ad5", "582105f571f5427a45b0dca5326c449bc08e9a017b74ca50925e4a629be8eeef"},
+{"00400020d832da2b18dc1b94326b745ee2ed26d2d8ec89aef1145ef32bd9503b200b7359ea151a70bf23cca38bfd8b984fe5f4e3cae76c6295b72127fca1cb377cab6dd1908814ceb1340749ff88fbef", "be8f3c739a7b8eae2b46ff0851fbe8f7dc3ff5cc8d9644db3608dad8b373fdc7"},
+{"0040002085eb178de3788c6ac4ca49ebb8d3e98592316ba55b9a504e12329c604892834d14ecd0929244d51d54927259fb4598ab4637b1db5eb17e7b972c665c2fc782f10582edd77fd414d914ebd31d", "2bac397ffbe22faf55c2e41f67061a3cd78d49228677e4924ca45423e2c728fb"},
+{"00400020893661f849ad505b3d231252c56fecbfe920400e73a2af177be55c4a7feab079590e75527e9f5fcd04ddf22379edf3a1b1e4ccbcbdc1eddc4ea288727663529646bdd864770cd306902c3695", "872f7ecc76c1bd88460a2c5dbba5589988cc15b8747f8585f0104b87b44fe98e"},
+{"004000208f5da2b38d7f6401828d1318fc87320b0b84af22176e82872bc5a5ed652561bc731731c3d2ceb75a295d26c938173b29c0c8d1acd2f4f1e4e778e006bf34267a6165c639a3f7a1faa31002b4", "c3b3c351db47a95725bbc0736b0b5dfa82d911af24e7701d11e1062bf92f55c1"},
+}
+
+func TestHoohashV110BitcoinVectors(t *testing.T) {
+for i, v := range refVectors {
+hdr, _ := hex.DecodeString(v.hdr)
+got := HoohashV110Bitcoin(hdr)
+gotHex := hex.EncodeToString(got[:])
+if gotHex != v.want {
+t.Errorf("i=%d\n  got:  %s\n  want: %s", i, gotHex, v.want)
+} else {
+t.Logf("i=%d PASS", i)
+}
+}
+}

@@ -46,7 +46,7 @@ import (
 	// "time"
 	"unicode"
 
-	"github.com/Hoosat-Oy/HTND/app/appmessage"
+	"github.com/HoosatNetwork/HTND/app/appmessage"
 )
 
 // RewardsRow is a single "we mined this blue and got paid" record.

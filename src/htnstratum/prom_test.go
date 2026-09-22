@@ -3,7 +3,7 @@ package htnstratum
 import (
 	"testing"
 
-	"github.com/Hoosat-Oy/HTND/app/appmessage"
+	"github.com/HoosatNetwork/HTND/app/appmessage"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 )
 

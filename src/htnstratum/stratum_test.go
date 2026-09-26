@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HoosatNetwork/HTND/app/appmessage"
-	"github.com/HoosatNetwork/HTND/util/difficulty"
+	"github.com/HoosatNetwork/HTND/v2/app/appmessage"
+	"github.com/HoosatNetwork/HTND/v2/util/difficulty"
 	"github.com/google/go-cmp/cmp"
 )
 

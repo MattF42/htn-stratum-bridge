@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HoosatNetwork/HTND/app/appmessage"
+	"github.com/HoosatNetwork/HTND/v2/app/appmessage"
 	"go.uber.org/zap"
 )
 

@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/HoosatNetwork/HTND/app/appmessage"
-	"github.com/HoosatNetwork/HTND/infrastructure/network/rpcclient"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/bridgefee"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/HoosatNetwork/HTND/v2/app/appmessage"
+	"github.com/HoosatNetwork/HTND/v2/infrastructure/network/rpcclient"
+	"github.com/HoosatNetwork/htn-stratum-bridge/src/bridgefee"
+	"github.com/HoosatNetwork/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )

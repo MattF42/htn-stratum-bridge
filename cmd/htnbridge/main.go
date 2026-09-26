@@ -9,8 +9,8 @@ import (
 	"path"
 	"time"
 
-	htnstratum "github.com/Hoosat-Oy/htn-stratum-bridge/src/htnstratum"
-        "github.com/Hoosat-Oy/htn-stratum-bridge/src/pow"
+	htnstratum "github.com/HoosatNetwork/htn-stratum-bridge/src/htnstratum"
+        "github.com/HoosatNetwork/htn-stratum-bridge/src/pow"
 	"gopkg.in/yaml.v2"
 )
 

@@ -127,8 +127,7 @@ func newShareHandler(hoosat *rpcclient.RPCClient, htnApi *HtnApi, rollingStats b
 
 func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats {
 	sh.statsLock.Lock()
-	defer sh.statsLock.Unlock()
-
+	defer sh.statsLock.Unlock() // InitWorkerCounters below can panic
 	var stats *WorkStats
 	found := false
 	var key string

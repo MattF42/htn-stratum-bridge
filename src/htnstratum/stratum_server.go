@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v2.18.2-FozPool-1"
+const version = "v2.18.4"
 const minBlockWaitTime = 100 * time.Millisecond
 
 // Default bridge fee configuration
@@ -145,24 +145,20 @@ func ListenAndServe(cfg BridgeConfig) error {
 		// Recover pending rewards on startup
 		rows, err := miningDB.db.Query("SELECT block_hash FROM block_rewards WHERE status == 'pending'")
 		if err != nil {
-    		logger.Error("Error querying pending blocks", zap.Error(err))
+			logger.Error("Error querying pending blocks", zap.Error(err))
 		} else {
-    		defer rows.Close()
-    		for rows.Next() {
-        		var blockHash string
-        		if err := rows.Scan(&blockHash); err != nil {
-            		logger.Error("Error scanning block hash", zap.Error(err))
-            		continue
-        		}
-        		go shareHandler.fetchAndUpdateReward(blockHash)
-			time.Sleep(20 * time.Millisecond) // Do not overwhelm the node on startup
-    		}
+			defer rows.Close()
+			for rows.Next() {
+				var blockHash string
+				if err := rows.Scan(&blockHash); err != nil {
+					logger.Error("Error scanning block hash", zap.Error(err))
+					continue
+				}
+				go shareHandler.fetchAndUpdateReward(blockHash)
+				time.Sleep(20 * time.Millisecond) // Do not overwhelm the node on startup
+			}
 		}
 	}
-
-
-
-
 
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
@@ -183,14 +179,13 @@ func ListenAndServe(cfg BridgeConfig) error {
 			return nil
 		}
 
-
-        // Foztor - create the stats handler here instead of blindly on connect
+		// Foztor - create the stats handler here instead of blindly on connect
 	handlers[string(gostratum.StratumMethodAuthorize)] =
 		func(ctx *gostratum.StratumContext, event gostratum.JsonRpcEvent) error {
 			if err := gostratum.HandleAuthorize(ctx, event); err != nil {
 				return err
 			}
-					// --- TEMPORARY DEBUG LOG ---
+			// --- TEMPORARY DEBUG LOG ---
 			logger.Infof("Miner Authorized - IP: %s, Wallet: %s, WorkerName: %s",
 				ctx.RemoteAddr, ctx.WalletAddr, ctx.WorkerName)
 			// ---------------------------

@@ -22,7 +22,7 @@ import (
 // gbtCacheEntry holds a cached GetBlockTemplate response and the time it was fetched.
 type gbtCacheEntry struct {
 	template  *appmessage.GetBlockTemplateResponseMessage
-	isFeeJob bool
+	isFeeJob  bool
 	fetchedAt time.Time
 }
 
@@ -38,15 +38,13 @@ type HtnApi struct {
 	gbtTotal    uint64
 	gbtDiverted uint64
 	// GBT response cache (per payout address)
-	gbtCache    map[string]*gbtCacheEntry
-	gbtCacheTTL time.Duration
-	gbtCacheMu  sync.Mutex
-        gbtCacheHits   uint64
-        gbtCacheMisses uint64
-	nodeCallMu sync.Mutex
+	gbtCache       map[string]*gbtCacheEntry
+	gbtCacheTTL    time.Duration
+	gbtCacheMu     sync.Mutex
+	gbtCacheHits   uint64
+	gbtCacheMisses uint64
+	nodeCallMu     sync.Mutex
 }
-
-
 
 func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, bridgeFee BridgeFeeConfig, gbtCacheTTL time.Duration) (*HtnApi, error) {
 	client, err := rpcclient.NewRPCClient(address)
@@ -134,7 +132,6 @@ func (htnApi *HtnApi) invalidateGBTCache() {
 	clear(htnApi.gbtCache)
 	htnApi.gbtCacheMu.Unlock()
 }
-
 
 func (htnApi *HtnApi) reconnect() error {
 	if htnApi.hoosat != nil {
@@ -245,20 +242,20 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 				workerID := []byte(sanitizeWorkerID(client.WorkerName))
 				jobKeyLen := 8 + len(prevBlockHashBytes) + 8 + len(workerID)
 				jobKey := make([]byte, jobKeyLen)
-				
+
 				// Add job counter (8 bytes, big-endian)
 				offset := 0
 				binary.BigEndian.PutUint64(jobKey[offset:], jobCounterValue)
 				offset += 8
-				
+
 				// Add prevBlockHash bytes
 				copy(jobKey[offset:], prevBlockHashBytes)
 				offset += len(prevBlockHashBytes)
-				
+
 				// Add timestamp (8 bytes, big-endian)
 				binary.BigEndian.PutUint64(jobKey[offset:], uint64(time.Now().Unix()))
 				offset += 8
-				
+
 				// Add workerID (UTF-8 bytes)
 				copy(jobKey[offset:], workerID)
 
@@ -273,7 +270,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 						zap.String("worker", sanitizeWorkerID(client.WorkerName)))
 					// Minimal periodic summary (adjust modulus as desired)
 					// Logs every 3600 total GBTs, and only after at least one diversion.
-					if  diverted%20 == 0 && diverted > 0 {
+					if diverted%20 == 0 && diverted > 0 {
 						pct := (float64(diverted) / float64(total)) * 100.0
 						htnApi.logger.Infof("diverted GBTs to bridge address : %.3f%% (%d/%d)", pct, diverted, total)
 					}
@@ -283,15 +280,15 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		}
 	}
 
-       // Build extraData string: CONSISTENT & CACHE-FRIENDLY
+	// Build extraData string: CONSISTENT & CACHE-FRIENDLY
 	var extraData string
 	if htnApi.gbtCacheTTL > 0 {
 		if poll != 0 && vote != 0 {
-			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge_%s as worker %s poll %d vote %d`,
+			extraData = fmt.Sprintf(`Mined by %s via htn-fozpool %s as worker %s poll %d vote %d`,
 				payoutAddress, version, sanitizeWorkerID(client.WorkerName), poll, vote)
 		} else {
 			// Effective caching: This string is identical for everyone sharing this address's cache
-			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge version %s`,
+			extraData = fmt.Sprintf(`Mined by %s via htn-fozpool %s`,
 				payoutAddress, version)
 		}
 	} else { // Pre GBT cache behaviour
@@ -302,16 +299,14 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			extraData = fmt.Sprintf(`Mined by %s via htn-stratum-bridge_%s as worker %s`,
 				payoutAddress, version, sanitizeWorkerID(client.WorkerName))
 		}
-	} 
-
-
+	}
 
 	// Request block template with selected payout address, using per-address
 	// cache when gbtCacheTTL > 0 to reduce RPC load on the node.
 	// On a cache miss the lock is released before the RPC call so concurrent
 	// requests for different payout addresses proceed in parallel; only map
 	// reads/writes are protected by the mutex.
-        // CRITICAL: We only use the cache for normal miner jobs (isFeeJob == false).
+	// CRITICAL: We only use the cache for normal miner jobs (isFeeJob == false).
 	// This prevents any race conditions or mixups between miner rewards and bridge taxes.
 	// TRACE 1: Before Cache Check
 	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
@@ -332,7 +327,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		if err != nil {
 			return nil, false, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
-		
+
 		htnApi.gbtCacheMu.Lock()
 		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{
 			template:  template,
@@ -344,7 +339,7 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 	}
 
 	// For Fee Jobs (or when cache is disabled), always fetch fresh from the node.
-        htnApi.nodeCallMu.Lock()
+	htnApi.nodeCallMu.Lock()
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 	htnApi.nodeCallMu.Unlock()
 	if err != nil {

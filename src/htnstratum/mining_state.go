@@ -40,26 +40,26 @@ func (ms *MiningState) AddJob(job *appmessage.RPCBlock, isFeeJob bool) int {
 	ms.jobCounter++
 	idx := ms.jobCounter
 	ms.JobLock.Lock()
-	
+
 	// Evict the outgoing block's fee-job entry when the ring-buffer slot is reused.
 	if old := ms.Jobs[idx%maxjobs]; old != nil && old.VerboseData != nil {
 		delete(ms.FeeJobs, old.VerboseData.Hash)
 	}
 
 	ms.Jobs[idx%maxjobs] = job
-	
+
 	if job != nil && job.VerboseData != nil {
 		hash := job.VerboseData.Hash
 		if isFeeJob {
 			ms.FeeJobs[hash] = true
 		} else {
 			if _, alreadyFee := ms.FeeJobs[hash]; !alreadyFee {
-                                delete(ms.FeeJobs, hash)
-                        }
+				delete(ms.FeeJobs, hash)
+			}
 		}
 
 	}
-	
+
 	ms.JobLock.Unlock()
 	return idx
 }

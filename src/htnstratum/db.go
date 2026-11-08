@@ -145,6 +145,7 @@ func (d *MiningDB) HasAcceptingBlockForWalletExcluding(walletAddr, acceptingBloc
 	}
 	return err == nil, err
 }
+
 // HasAcceptingBlockForWallet returns true if we already booked something for (wallet, acceptingBlockHash).
 // This is used to enforce "process only the first block that maps to an accepting block" semantics.
 func (d *MiningDB) HasAcceptingBlockForWallet(walletAddr, acceptingBlockHash string) (bool, error) {

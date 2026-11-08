@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v2.18.4"
+const version = "v2.19.0"
 const minBlockWaitTime = 100 * time.Millisecond
 
 // Default bridge fee configuration

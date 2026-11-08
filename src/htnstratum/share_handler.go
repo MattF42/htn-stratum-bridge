@@ -1,6 +1,7 @@
 package htnstratum
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log"
 	"math"
@@ -10,15 +11,14 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
 
 	"github.com/HoosatNetwork/HTND/v2/app/appmessage"
 	"github.com/HoosatNetwork/HTND/v2/domain/consensus/model/externalapi"
 
 	"github.com/HoosatNetwork/HTND/v2/domain/consensus/utils/consensushashing"
-	"github.com/HoosatNetwork/htn-stratum-bridge/src/pow"
 	"github.com/HoosatNetwork/HTND/v2/infrastructure/network/rpcclient"
 	"github.com/HoosatNetwork/htn-stratum-bridge/src/gostratum"
+	"github.com/HoosatNetwork/htn-stratum-bridge/src/pow"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -32,7 +32,7 @@ type WorkStats struct {
 	SharesDiff         atomic.Float64
 	StaleShares        atomic.Int64
 	InvalidShares      atomic.Int64
-	WalletAddr	   string
+	WalletAddr         string
 	WorkerName         string
 	StartTime          time.Time
 	LastShare          time.Time
@@ -60,10 +60,10 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
-	onBlockSolved      func() // called immediately after a successful block submission
+	onBlockSolved      func()    // called immediately after a successful block submission
 	miningDB           *MiningDB // may be nil if DB is not configured
-	lastRewardFetch time.Time
-        cachedReward    uint64
+	lastRewardFetch    time.Time
+	cachedReward       uint64
 }
 
 type BanInfo struct {
@@ -171,7 +171,6 @@ func (sh *shareHandler) removeStats(ctx *gostratum.StratumContext) {
 		delete(sh.stats, ctx.RemoteAddr)
 	}
 }
-
 
 func (stats *WorkStats) updateRollingCounters(shareDiff float64, isStale bool, isInvalid bool) {
 	now := time.Now()
@@ -372,10 +371,10 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	}
 	mutableHeader := converted.Header.ToMutable()
 	mutableHeader.SetNonce(submitInfo.nonceVal)
-	converted = &externalapi.DomainBlock{  // Update converted with nonce
-        Header:       mutableHeader.ToImmutable(),
-        Transactions: converted.Transactions,
-        }
+	converted = &externalapi.DomainBlock{ // Update converted with nonce
+		Header:       mutableHeader.ToImmutable(),
+		Transactions: converted.Transactions,
+	}
 	powState := pow.NewState(mutableHeader)
 	// fmt.Printf("Block version: %d\n", powState.BlockVersion)
 	// fmt.Printf("Block prevHeader: %s\n", powState.PrevHeader.String())
@@ -497,15 +496,15 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	block *externalapi.DomainBlock, submitInfo *submitInfo, eventId any) error {
 	sh.submitLock.Lock()
 	defer sh.submitLock.Unlock()
-        // Refuse to submit blocks when the node is not synced.
-        info, err := sh.hoosat.GetInfo()
-    	isSynced := false
-    	if err == nil && info != nil {
-        	isSynced = info.IsSynced
-    	}
-    	if !isSynced {
-        	return errors.New("node is not synced; refusing to submit block")
-    	}
+	// Refuse to submit blocks when the node is not synced.
+	info, err := sh.hoosat.GetInfo()
+	isSynced := false
+	if err == nil && info != nil {
+		isSynced = info.IsSynced
+	}
+	if !isSynced {
+		return errors.New("node is not synced; refusing to submit block")
+	}
 
 	mutable := block.Header.ToMutable()
 	mutable.SetNonce(submitInfo.nonceVal)
@@ -590,8 +589,8 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		// 4) Walk the Chain: Scan through the added blocks to find the actual payor.
 		foundPayment := false
 		for _, acceptingBlockHash := range chainInfo.AddedChainBlockHashes {
-			
-			// A) Check if we have already attributed a reward from this specific accepting block 
+
+			// A) Check if we have already attributed a reward from this specific accepting block
 			// to this wallet for a DIFFERENT mined block. (Prevent double-counting).
 			alreadyBooked, err := sh.miningDB.HasAcceptingBlockForWalletExcluding(
 				origRecord.WalletAddress,
@@ -608,7 +607,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			if err != nil || acceptingBlock == nil || acceptingBlock.Block == nil {
 				continue
 			}
-
 
 			wasMergedAsBlue := false
 			wasMergedAsRed := false
@@ -632,11 +630,11 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 			}
 
 			if wasMergedAsRed {
-				// The network explicitly merged and rejected this block. 
+				// The network explicitly merged and rejected this block.
 				// It will never be paid. Stop looking.
 				status = "red"
 				reward = 0
-				foundPayment = true 
+				foundPayment = true
 				break
 			}
 
@@ -644,19 +642,19 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 				// This chain block didn't merge our block at all. Keep walking the chain.
 				continue
 			}
-                        foundPayment = true 
-			
-                        // B2 If this fails, we have somehow failed to track the ownership of the block properly
+			foundPayment = true
+
+			// B2 If this fails, we have somehow failed to track the ownership of the block properly
 			ok, totalAmount := coinbaseSumToAddress(acceptingBlock.Block, origRecord.WalletAddress)
 			if !ok || totalAmount == 0 {
-				log.Printf("Warning: Block %s was merged as BLUE by %s, but no payment found for wallet %s", 
+				log.Printf("Warning: Block %s was merged as BLUE by %s, but no payment found for wallet %s",
 					blockHash, acceptingBlockHash, origRecord.WalletAddress)
 				status = "blue"
 				reward = 0
 				break
 			}
- 
-			// C) If we found a payment but it was already booked by another record, 
+
+			// C) If we found a payment but it was already booked by another record,
 			// mark this block as a merge duplicate and stop.
 			if alreadyBooked {
 				status = "merge_duplicate"
@@ -687,8 +685,6 @@ func (sh *shareHandler) fetchAndUpdateReward(blockHash string) {
 		log.Printf("failed to update block %s in DB: %v", blockHash, err)
 	}
 }
-
-
 
 func (sh *shareHandler) startStatsThread() error {
 	start := time.Now()

@@ -32,24 +32,23 @@ func getLiveWorkerStats(sh *shareHandler, addr string) []WorkerLiveStat {
 	}
 	sh.statsLock.Lock()
 	defer sh.statsLock.Unlock()
-		// log.Printf("DEBUG: Query addr = %q", addr)
-
+	// log.Printf("DEBUG: Query addr = %q", addr)
 
 	out := make([]WorkerLiveStat, 0, len(sh.stats))
 	for _, v := range sh.stats {
-				// log.Printf("DEBUG: Worker %q has WalletAddr %q", v.WorkerName, v.WalletAddr)
+		// log.Printf("DEBUG: Worker %q has WalletAddr %q", v.WorkerName, v.WalletAddr)
 		if v.WalletAddr == addr {
-		out = append(out, WorkerLiveStat{
-			Name:            v.WorkerName,
-			LiveGHs:         GetAverageHashrateGHs(v),
-			OneHrGHs:        GetOneHourAverageHashrateGHs(v),
-			TwentyFourHrGHs: GetRollingAverageHashrateGHs(v),
-			BlocksFound:     v.BlocksFound.Load(),
-		})
-	}
+			out = append(out, WorkerLiveStat{
+				Name:            v.WorkerName,
+				LiveGHs:         GetAverageHashrateGHs(v),
+				OneHrGHs:        GetOneHourAverageHashrateGHs(v),
+				TwentyFourHrGHs: GetRollingAverageHashrateGHs(v),
+				BlocksFound:     v.BlocksFound.Load(),
+			})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-		// log.Printf("DEBUG: Found %d matching workers", len(out))
+	// log.Printf("DEBUG: Found %d matching workers", len(out))
 
 	return out
 }
@@ -257,6 +256,7 @@ Hoominer is the reference miner.  The other miners implement a DevFee, and highe
 
 </body>
 </html>`))
+
 // statsTmpl renders the per-wallet stats page.
 var statsTmpl = template.Must(template.New("stats").Funcs(template.FuncMap{
 	"div": func(a, b float64) float64 { return a / b },
@@ -920,22 +920,22 @@ document.getElementById('wbs-modal').addEventListener('click', function(e) {
 // WorkerBlockCount holds per-worker blue/red block counts used by the
 // /api/worker_counts endpoint and populated by GetWorkerBlockCountsByWallet.
 type statsPageData struct {
-	Address     string
-	Blocks      []BlockRecord
-	TotalBlocks int
-	TotalAtoms  uint64
-	Workers     int
-	LiveWorkers []WorkerLiveStat
-        Blue        int     // New
-        Red         int     // New
-        Pending     int     // New
-        BluePercent float64 // New
+	Address              string
+	Blocks               []BlockRecord
+	TotalBlocks          int
+	TotalAtoms           uint64
+	Workers              int
+	LiveWorkers          []WorkerLiveStat
+	Blue                 int     // New
+	Red                  int     // New
+	Pending              int     // New
+	BluePercent          float64 // New
 	TotalLiveGHs         float64
-        TotalOneHrGHs        float64
-        TotalTwentyFourHrGHs float64
-        TotalBlocksFound     int64
-	NetHash float64
-	FeePercent float64
+	TotalOneHrGHs        float64
+	TotalTwentyFourHrGHs float64
+	TotalBlocksFound     int64
+	NetHash              float64
+	FeePercent           float64
 }
 
 // StartWebUI registers HTTP handlers and starts the web UI server on the given
@@ -950,25 +950,25 @@ type statsPageData struct {
 // HTTP on port.
 func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareHandler, stratumAddr string, feePPM int,
 	enableTLS bool, tlsCertFile, tlsKeyFile, httpsPort string) {
-        feePercent := float64(feePPM) / 100.0  // Convert PPM to percentage (e.g., 50 -> 0.5)
+	feePercent := float64(feePPM) / 100.0 // Convert PPM to percentage (e.g., 50 -> 0.5)
 
 	mux := http.NewServeMux()
 
-        // GET / — wallet address input form
-    	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        	if r.URL.Path != "/" {
-            	http.NotFound(w, r)
-            	return
-        	}
-        	data := struct {
-            	StratumAddr string
-            	FeePercent  float64
-        	}{StratumAddr: stratumAddr, FeePercent: feePercent}
-        	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-        	if err := indexTmpl.Execute(w, data); err != nil {
-            	logger.Warn("webui: index template error", zap.Error(err))
-        	}
-    	})
+	// GET / — wallet address input form
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		data := struct {
+			StratumAddr string
+			FeePercent  float64
+		}{StratumAddr: stratumAddr, FeePercent: feePercent}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := indexTmpl.Execute(w, data); err != nil {
+			logger.Warn("webui: index template error", zap.Error(err))
+		}
+	})
 
 	// GET /stats?address=<addr>&limit=<n> — HTML stats page
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
@@ -996,44 +996,44 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		var totalAtoms uint64
 		totalAtoms, err = db.GetTotalAtomsByWallet(addr)
 		if err != nil {
-    		logger.Warn("webui: db total atoms error", zap.Error(err))
-    		totalAtoms = 0  // Or handle error
+			logger.Warn("webui: db total atoms error", zap.Error(err))
+			totalAtoms = 0 // Or handle error
 		}
 
 		filteredWorkers := getLiveWorkerStats(sh, addr)
-                var totalLive, totalOneHr, total24Hr float64
+		var totalLive, totalOneHr, total24Hr float64
 		var alltotalBlocks int64
 		for _, w := range filteredWorkers {
-    		totalLive += w.LiveGHs
-    		totalOneHr += w.OneHrGHs
-    		total24Hr += w.TwentyFourHrGHs
-    		alltotalBlocks += w.BlocksFound
+			totalLive += w.LiveGHs
+			totalOneHr += w.OneHrGHs
+			total24Hr += w.TwentyFourHrGHs
+			alltotalBlocks += w.BlocksFound
 		}
-                blue, red, pending := db.GetBlockCountsByWallet(addr)  // New
-                totalConfirmed := blue + red
-                bluePercent := 0.0
-                if totalConfirmed > 0 {
-                    bluePercent = float64(blue) / float64(totalConfirmed) * 100
-                }
-                netHash := 0.0
-                netHash = DiffToHash(sh.soloDiff) * 5 * 1000  // GH/s * bps to MH/s
+		blue, red, pending := db.GetBlockCountsByWallet(addr) // New
+		totalConfirmed := blue + red
+		bluePercent := 0.0
+		if totalConfirmed > 0 {
+			bluePercent = float64(blue) / float64(totalConfirmed) * 100
+		}
+		netHash := 0.0
+		netHash = DiffToHash(sh.soloDiff) * 5 * 1000 // GH/s * bps to MH/s
 		data := statsPageData{
-			Address:     addr,
-			Blocks:      blocks,
-			TotalBlocks: totalBlocks,
-			TotalAtoms:  totalAtoms,
-			Workers:     len(filteredWorkers),
-			LiveWorkers: getLiveWorkerStats(sh, addr),
-                        Blue:        blue,
-    			Red:         red, 
-    			Pending:     pending,
-    			BluePercent: bluePercent,
-                        TotalLiveGHs:         totalLive,
-    			TotalOneHrGHs:        totalOneHr,
-                        TotalTwentyFourHrGHs: total24Hr,
-                        TotalBlocksFound:     alltotalBlocks,
-			NetHash: netHash,
-                        FeePercent:           feePercent, 
+			Address:              addr,
+			Blocks:               blocks,
+			TotalBlocks:          totalBlocks,
+			TotalAtoms:           totalAtoms,
+			Workers:              len(filteredWorkers),
+			LiveWorkers:          getLiveWorkerStats(sh, addr),
+			Blue:                 blue,
+			Red:                  red,
+			Pending:              pending,
+			BluePercent:          bluePercent,
+			TotalLiveGHs:         totalLive,
+			TotalOneHrGHs:        totalOneHr,
+			TotalTwentyFourHrGHs: total24Hr,
+			TotalBlocksFound:     alltotalBlocks,
+			NetHash:              netHash,
+			FeePercent:           feePercent,
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := statsTmpl.Execute(w, data); err != nil {
@@ -1086,26 +1086,26 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			logger.Warn("webui: json encode error", zap.Error(err))
 		}
 	})
-        // GET /api/block_counts?address=<addr> — JSON API for block status counts
+	// GET /api/block_counts?address=<addr> — JSON API for block status counts
 	mux.HandleFunc("/api/block_counts", func(w http.ResponseWriter, r *http.Request) {
-    	addr := strings.TrimSpace(r.URL.Query().Get("address"))
-    	if addr == "" {
-        	http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
-        	return
-    	}
-    	blue, red, pending := db.GetBlockCountsByWallet(addr)  // Implement in mining_db.go
-    	totalConfirmed := blue + red
-    	bluePercent := 0.0
-    	if totalConfirmed > 0 {
-        	bluePercent = float64(blue) / float64(totalConfirmed) * 100
-    	}
-    	w.Header().Set("Content-Type", "application/json")
-    	json.NewEncoder(w).Encode(map[string]interface{}{
-        	"blue":         blue,
-        	"red":          red,
-        	"pending":      pending,
-        	"blue_percent": bluePercent,
-    	})
+		addr := strings.TrimSpace(r.URL.Query().Get("address"))
+		if addr == "" {
+			http.Error(w, `{"error":"missing address parameter"}`, http.StatusBadRequest)
+			return
+		}
+		blue, red, pending := db.GetBlockCountsByWallet(addr) // Implement in mining_db.go
+		totalConfirmed := blue + red
+		bluePercent := 0.0
+		if totalConfirmed > 0 {
+			bluePercent = float64(blue) / float64(totalConfirmed) * 100
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"blue":         blue,
+			"red":          red,
+			"pending":      pending,
+			"blue_percent": bluePercent,
+		})
 	})
 
 	// GET /api/worker_counts?address=<addr> — per-worker blue/red block counts
@@ -1166,18 +1166,18 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 		}
 		w.Header().Set("Content-Type", "application/json")
 		resp := struct {
-			NetHash             float64          `json:"net_hash"`
-			TotalAtoms          uint64           `json:"total_atoms"`
-			Workers             int              `json:"workers"`
-			LiveWorkers         []WorkerLiveStat `json:"live_workers"`
-			Blue                int              `json:"blue"`
-			Red                 int              `json:"red"`
-			Pending             int              `json:"pending"`
-			BluePercent         float64          `json:"blue_percent"`
-			TotalLiveGHs        float64          `json:"total_live_ghs"`
-			TotalOneHrGHs       float64          `json:"total_one_hr_ghs"`
-			TotalTwentyFourHrGHs float64         `json:"total_twenty_four_hr_ghs"`
-			TotalBlocksFound    int64            `json:"total_blocks_found"`
+			NetHash              float64          `json:"net_hash"`
+			TotalAtoms           uint64           `json:"total_atoms"`
+			Workers              int              `json:"workers"`
+			LiveWorkers          []WorkerLiveStat `json:"live_workers"`
+			Blue                 int              `json:"blue"`
+			Red                  int              `json:"red"`
+			Pending              int              `json:"pending"`
+			BluePercent          float64          `json:"blue_percent"`
+			TotalLiveGHs         float64          `json:"total_live_ghs"`
+			TotalOneHrGHs        float64          `json:"total_one_hr_ghs"`
+			TotalTwentyFourHrGHs float64          `json:"total_twenty_four_hr_ghs"`
+			TotalBlocksFound     int64            `json:"total_blocks_found"`
 		}{
 			NetHash:              netHash,
 			TotalAtoms:           totalAtoms,
@@ -1196,7 +1196,6 @@ func StartWebUI(db *MiningDB, port string, logger *zap.SugaredLogger, sh *shareH
 			logger.Warn("webui: api stats encode error", zap.Error(err))
 		}
 	})
-
 
 	logger.Info("starting web UI on " + port)
 	if enableTLS {

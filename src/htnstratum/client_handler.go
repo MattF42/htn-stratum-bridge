@@ -68,9 +68,9 @@ func (c *clientListener) OnConnect(ctx *gostratum.StratumContext) {
 	}
 	// Foztor - do not do here, we end up with port scanners being tracked.
 	// go func() {
-		// // hacky, but give time for the authorize to go through so we can use the worker name
-		// time.Sleep(5 * time.Second)
-		// c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
+	// // hacky, but give time for the authorize to go through so we can use the worker name
+	// time.Sleep(5 * time.Second)
+	// c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
 	// }()
 }
 
@@ -81,7 +81,7 @@ func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {
 	delete(c.clients, ctx.Id)
 	c.logger.Info("removed client ", ctx.Id)
 	c.clientLock.Unlock()
-        // Remove per-client stats so the disconnected client no longer appears in
+	// Remove per-client stats so the disconnected client no longer appears in
 	// the rolling/printed stats table.
 	if c.shareHandler != nil {
 		c.shareHandler.removeStats(ctx)

@@ -12,7 +12,7 @@ import (
 func TestBridgeFeeIntegration_Disabled(t *testing.T) {
 	// Test that when bridge fee is disabled, it doesn't affect GBT behavior
 	logger := zap.NewNop().Sugar()
-	
+
 	bridgeFee := BridgeFeeConfig{
 		Enabled:    false,
 		RatePpm:    50,
@@ -40,7 +40,7 @@ func TestBridgeFeeIntegration_Disabled(t *testing.T) {
 func TestBridgeFeeIntegration_NoServerSalt(t *testing.T) {
 	// Test that when ServerSalt is empty, feature is effectively disabled
 	logger := zap.NewNop().Sugar()
-	
+
 	bridgeFee := BridgeFeeConfig{
 		Enabled:    true,
 		RatePpm:    50,
@@ -65,7 +65,7 @@ func TestBridgeFeeIntegration_NoServerSalt(t *testing.T) {
 func TestBridgeFeeIntegration_JobCounterIncrement(t *testing.T) {
 	// Test that job counter increments properly
 	logger := zap.NewNop().Sugar()
-	
+
 	bridgeFee := BridgeFeeConfig{
 		Enabled:    true,
 		RatePpm:    50,

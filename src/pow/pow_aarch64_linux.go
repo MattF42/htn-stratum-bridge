@@ -30,7 +30,7 @@ var UseHoohashCLibrary bool
 
 func SetUseHoohashCLibrary(use bool) {
 	UseHoohashCLibrary = true // Not valid to use native golang on aarch64 as non deteterministic to X64
-	_ = use // Keep compiler happy
+	_ = use                   // Keep compiler happy
 }
 
 type State struct {
